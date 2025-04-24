@@ -63,16 +63,16 @@ def create_surface_from_points(data, type = 'channels', num_points=1000, plottin
         bottom_point[2] -= 2*radius  # Adjust this value to make sure it's below the electrodes
         # Calculate the additional four points
         before_point = bottom_point.copy()
-        before_point[0] -= radius
+        before_point[0] -= radius/4
 
         after_point = bottom_point.copy()
-        after_point[0] += radius
+        after_point[0] += radius/4
 
         left_point = bottom_point.copy()
-        left_point[1] -= radius
+        left_point[1] -= radius/4
 
         right_point = bottom_point.copy()
-        right_point[1] += radius
+        right_point[1] += radius/4
         positions = np.concatenate([positions, [bottom_point, before_point, after_point, left_point, right_point]], axis=0)
 
     # Create points
@@ -115,6 +115,13 @@ def create_surface_from_points(data, type = 'channels', num_points=1000, plottin
                                    z=channel_positions[:, 2],
                                    mode='markers',
                                    marker=dict(size=2, color='blue')))
+        
+        # Add scatter plot for vertex locations
+        fig.add_trace(go.Scatter3d(x=vertices[:, 0],
+                                   y=vertices[:, 1],
+                                   z=vertices[:, 2],
+                                   mode='markers',
+                                   marker=dict(size=2, color='red')))
 
         fig.update_layout(scene=dict(xaxis=dict(nticks=4, range=[np.min(vertices),np.max(vertices)],),
                              yaxis=dict(nticks=4, range=[np.min(vertices),np.max(vertices)],),
@@ -122,6 +129,8 @@ def create_surface_from_points(data, type = 'channels', num_points=1000, plottin
                              aspectmode='cube'),
                              width=700,
                              margin=dict(r=20, l=10, b=10, t=10))
+        
+        
         fig.show()   
 
     return Surface, PolySurface
@@ -143,8 +152,6 @@ def distance_along_surface(data, Surface, tolerance = 0.01, get_extent = False, 
     #some very un-elegant changing of data types because the original ones do not work
     channel_positions = np.array(data.get_channel_positions())
     vert = Surface[0].astype(np.float64)
-    #sometimes we added extra points to the surface to fix the bottom of it. If the surface has more vertices than there are channels,
-
     
     vert = Surface[0].astype(np.float64)
     faces = np.asarray([Surface[1]], dtype='int32').squeeze()
@@ -152,6 +159,9 @@ def distance_along_surface(data, Surface, tolerance = 0.01, get_extent = False, 
 
     # Find exact vertex matches
     vertInd = []
+    #sometimes we added extra points to the surface to fix the bottom of it (create_surface_from_points). 
+    # If the surface has more vertices than there are channels, we ignore the extra ones by looping ove channel positions,
+    # instead of over vertices
     for position in channel_positions:
         # Use KD-tree query to find the closest point in the vert
         distance, index = kdtree.query(position)
