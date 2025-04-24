@@ -11,6 +11,7 @@ from scipy.interpolate import Rbf
 from scipy.linalg import svd
 from scipy.spatial import KDTree
 from scipy.spatial import ConvexHull
+from scipy.spatial import Delaunay
 from matplotlib.path import Path
 import vtk
 import matplotlib.pyplot as plt
@@ -74,7 +75,23 @@ def create_surface_from_points(data, type = 'channels', num_points=1000, plottin
         right_point = bottom_point.copy()
         right_point[1] += radius/4
         positions = np.concatenate([positions, [bottom_point, before_point, after_point, left_point, right_point]], axis=0)
-
+    #sometimes some electrode position is a bit too far in to make it onto the surface. 
+    # so we make a hull defined by the outermost positions and then just move whichever ones are not on it
+    # again, if you have a better idea (not too difficult), please let me know  :)  
+    try:
+        tri = Delaunay(positions)
+        # Find original electrodes that are not on the convex hull
+        hull = tri.convex_hull
+        all_hull_vertices = np.unique(hull.ravel())
+        hull_points = positions[all_hull_vertices]
+        
+        original_electrodes = data.get_channel_positions()
+        for i in range(len(original_electrodes)):            
+            if i not in all_hull_vertices:
+                direction = original_electrodes[i] - centroid
+                positions[i] = original_electrodes[i] + direction*0.01  # move tiny bit outward
+    except:
+        pass  # if this doesn't work, just skip it and hope for the best
     # Create points
     points = vtk.vtkPoints()
     for position in positions:
