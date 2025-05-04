@@ -1040,6 +1040,8 @@ def merge_motifs_across_subjects(motifs, mergeThreshold = .6, pixelThreshold = 1
             merged_motifs.append(motif)
     print ('MergeCount:', MergeCount)
     print ('NotMergeCount:', NotMergeCount)
+    print("Initial number of motifs:", len(motifs))
+    print("Final number of merged motifs:", len(merged_motifs))
     return merged_motifs
 
 

@@ -111,7 +111,7 @@ for sub, filePath in enumerate(fileList):
         minFrames = int(np.floor((waveData.get_sample_rate() / freqs[1])))
         nTimepointsEdge = int(2 * (waveData.get_sample_rate() / freqs[freqInd]))
         baselinePeriod = (100,240) if freqInd == 0 else None 
-        motifs = hf.find_wave_motifs(waveData, 
+        motifs = hf.find_wave_mcd .otifs(waveData, 
                                             dataBucketName=dataBucketName, 
                                             oscillationThresholdDataBucket = powerBucketName,
                                             oscillationThresholdFlag = oscillationThresholdFlag,

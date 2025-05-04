@@ -9,9 +9,7 @@ from scipy.spatial import distance_matrix
 from scipy.spatial.transform import Rotation as R
 from scipy.interpolate import Rbf
 from scipy.linalg import svd
-from scipy.spatial import KDTree
-from scipy.spatial import ConvexHull
-from scipy.spatial import Delaunay
+from scipy.spatial import Delaunay, KDTree, ConvexHull
 from matplotlib.path import Path
 import vtk
 import matplotlib.pyplot as plt
@@ -20,7 +18,6 @@ import plotly.graph_objects as go
 import joblib
 import platform
 import multiprocessing
-import trimesh
 
 #%%
 
@@ -44,7 +41,7 @@ def create_surface_from_points(data, type = 'channels', num_points=1000, plottin
     centroid = np.mean(positions, axis=0)
     # set radius to mean distance from centroid to positions
     radius = np.mean(np.linalg.norm(positions - centroid, axis=1))        
-    if type == 'sphere':
+    if type == 'sphere': #doesn't actually do any projection yet. Fix or use type=channels
         #project electrodes onto sphere
         # get centroid of positions
         # make more points
@@ -75,41 +72,58 @@ def create_surface_from_points(data, type = 'channels', num_points=1000, plottin
         right_point = bottom_point.copy()
         right_point[1] += radius/4
         positions = np.concatenate([positions, [bottom_point, before_point, after_point, left_point, right_point]], axis=0)
-    #sometimes some electrode position is a bit too far in to make it onto the surface. 
-    # so we make a hull defined by the outermost positions and then just move whichever ones are not on it
-    # again, if you have a better idea (not too difficult), please let me know  :)  
-    try:
-        tri = Delaunay(positions)
-        # Find original electrodes that are not on the convex hull
-        hull = tri.convex_hull
-        all_hull_vertices = np.unique(hull.ravel())
-        hull_points = positions[all_hull_vertices]
-        
-        original_electrodes = data.get_channel_positions()
-        for i in range(len(original_electrodes)):            
-            if i not in all_hull_vertices:
-                direction = original_electrodes[i] - centroid
-                positions[i] = original_electrodes[i] + direction*0.01  # move tiny bit outward
-    except:
-        pass  # if this doesn't work, just skip it and hope for the best
-    # Create points
+        #sometimes some electrode position is a bit too far in to make it onto the surface. 
+        # so we make a hull defined by the outermost positions and then just move whichever ones are inside the hull
+        # to the closest face on the hull
+        # again, if you have a better idea (not too difficult), please let me know  :)  
+        try:            
+            tri = Delaunay(positions)
+            hull = tri.convex_hull
+            hull_vertices = positions[np.unique(hull.ravel())]
+            
+            for i in range(len(data.get_channel_positions())):
+                if i not in np.unique(hull.ravel()):
+                    # Find nearest hull face
+                    closest_dist = float('inf')
+                    closest_proj = None
+                    
+                    for face in hull:
+                        a, b, c = positions[face]                        
+                        # Simple plane projection
+                        ab = b - a
+                        ac = c - a
+                        normal = np.cross(ab, ac)
+                        proj = positions[i] - normal * (np.dot(positions[i]-a, normal)/np.dot(normal, normal))
+                        
+                        # check if insde face (quick and dirty version)
+                        if (np.dot(np.cross(b-a, proj-a), normal) >= 0 and 
+                            np.dot(np.cross(c-b, proj-b), normal) >= 0 and
+                            np.dot(np.cross(a-c, proj-c), normal) >= 0):
+                            dist = np.linalg.norm(positions[i]-proj)
+                            if dist < closest_dist:
+                                closest_dist = dist
+                                closest_proj = proj
+                    
+                    positions[i] = closest_proj if closest_proj is not None else hull_vertices[
+                        KDTree(hull_vertices).query(positions[i])[1]]
+        except:
+            pass
+    # make points for VTK
     points = vtk.vtkPoints()
     for position in positions:
         points.InsertNextPoint(position)
-    # Create a polydata object
+    # make a polydata object
     polydata = vtk.vtkPolyData()
     polydata.SetPoints(points)
-    # Create a surface from the points
+    # make a surface from the points
     delaunay = vtk.vtkDelaunay3D()
     delaunay.SetInputData(polydata)
     delaunay.Update()
-    # Extract the surface
+    
     surface_filter = vtk.vtkDataSetSurfaceFilter()
     surface_filter.SetInputConnection(delaunay.GetOutputPort())
     surface_filter.Update()
-    # Get the surface data
     PolySurface = surface_filter.GetOutput()
-    # Get the vertices and faces
     vertices = np.array([PolySurface.GetPoint(i) for i in range(PolySurface.GetNumberOfPoints())])
     faces = np.array([PolySurface.GetCell(i).GetPointIds().GetId(j) for i in range(PolySurface.GetNumberOfCells()) for j in range(3)])
 
@@ -131,7 +145,7 @@ def create_surface_from_points(data, type = 'channels', num_points=1000, plottin
                                    y=channel_positions[:, 1],
                                    z=channel_positions[:, 2],
                                    mode='markers',
-                                   marker=dict(size=2, color='blue')))
+                                   marker=dict(size=3, color='blue', opacity=0.8)))
         
         # Add scatter plot for vertex locations
         fig.add_trace(go.Scatter3d(x=vertices[:, 0],
