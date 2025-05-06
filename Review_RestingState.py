@@ -291,20 +291,20 @@ import pandas as pd
 
 #%%________Set files___________________________________________
 # folder = "/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/"
-# allMotifsFile = 'RestingStateMotifsEEG_NoThreshold_EyesClosed'
-# figfolder = folder 
-# fileList = glob.glob(os.path.join(folder, "*",  "EEG_18_OpticalFlowAfterFilter_Hilbert_masked_RestingStateEyesClosed"), recursive=True)
-# oscillationThresholdFlag = False 
+allMotifsFile = 'RestingStateMotifsEEG_NoThreshold_EyesClosed'
+figfolder = folder 
+fileList = glob.glob(os.path.join(folder, "*",  "EEG_18_OpticalFlowAfterFilter_Hilbert_masked_RestingStateEyesClosed"), recursive=True)
+oscillationThresholdFlag = False 
 
 # allMotifsFile = 'RestingStateMotifsMag_NoThreshold_EyesClosed'
 # figfolder = folder
 # fileList = glob.glob(os.path.join(folder, "*",  "Mag_18_OpticalFlowAfterFilter_Hilbert_masked_RestingState"), recursive=True)
 # oscillationThresholdFlag = False 
 
-allMotifsFile = 'RestingStateMotifsGrad_NoThreshold_EyesClosed'
-figfolder = folder
-fileList = glob.glob(os.path.join(folder, "*",  "Grad_18_OpticalFlowAfterFilter_Hilbert_masked_RestingState"), recursive=True)
-oscillationThresholdFlag = False 
+# allMotifsFile = 'RestingStateMotifsGrad_NoThreshold_EyesClosed'
+# figfolder = folder
+# fileList = glob.glob(os.path.join(folder, "*",  "Grad_18_OpticalFlowAfterFilter_Hilbert_masked_RestingState"), recursive=True)
+# oscillationThresholdFlag = False 
 
 GA_motif_counts = []
 allmotifs = []
@@ -395,11 +395,11 @@ for key in waveData.DataBuckets.keys():
         break
 dataBucketName = first_key_with_uv
 
-#____________________________________________________
-#temp, just to compare plots with task data 
-folder  = "/mnt/Data/DuguelabCluster/wavesim/LoGlo/"
-allMotifsFile = 'AllCondsMotifsEEG_NoThreshold'
-#___________________________________________________
+# #____________________________________________________
+# #temp, just to compare plots with task data 
+# folder  = "/mnt/Data/DuguelabCluster/wavesim/LoGlo/"
+# allMotifsFile = 'AllCondsMotifsEEG_NoThreshold'
+# #___________________________________________________
 GA_motif_counts = []
 allTrialInfo = []
 #% average top motifs per subject

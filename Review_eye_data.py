@@ -8,76 +8,119 @@ from Modules.Utils import WaveData as wd
 from Modules.Utils import ImportHelpers
 import mne
 import numpy as np
+import matplotlib.pyplot as plt
 import os
+import glob
 import pandas as pd
-import subprocess
-
+from scipy.stats import f_oneway, ttest_rel
 
 #%% Import from MNE-Data
-root_dir = '/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/LGr_GM_JW_DH_LD_WavesModel/Experiments/Data/data_MEEG/ET/'
+root_dir = '//mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/EyeData'
 session2_dirs = []
-savePath = '/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/'
-for dirpath, dirnames, filenames in os.walk(root_dir):
-    if 'log' in dirnames:
-        dirnames.remove('log') # skip 'log' folder
-    if 'session2' in dirnames:
-        session2_dirpath = os.path.join(dirpath, 'session2')
-        session2_dirs.append(session2_dirpath)
-file ="*.edf"
-#remove folder 90WCLR (that one doesn't have all the task data) from session2dirs
-session2_dirs = [folder for folder in session2_dirs if "90WCLR" not in folder]
+savePath = root_dir
+fileName = "*.asc"
+fileList = glob.glob(os.path.join(root_dir, fileName), recursive=True)
 
 
-for folder in session2_dirs:
-    print ("Loading folder: " + folder)
-    parent_dir = os.path.dirname(folder)
-    # make save folder:
-    parent_dir = os.path.dirname(folder)
-    parent_folder = os.path.basename(parent_dir)    
-    # make save folder:
-    savefolder = os.path.join(savePath, parent_folder)    
-    print("Saving to: " + savefolder)
-for file in os.listdir(folder):    
+results = []
+
+for file in fileList:
     print("Loading file: " + file)
-    if file.endswith('.edf'):
-        # Load the EDF file
-        edf_path = os.path.join(folder, file)
-        #convert to ascii format using e2a.sh
-        base_name = os.path.splitext(file)[0]  # Get the file name without extension
+    raw = mne.io.read_raw_eyelink(file)
+    annotations = raw.annotations
 
-        # Paths for saving converted files
-        asc_dir = os.path.join(folder, "asc")
-        edf_dir = os.path.join(folder, "edf")
-        os.makedirs(asc_dir, exist_ok=True)
-        os.makedirs(edf_dir, exist_ok=True)
+    # Extract participant ID (first 7 characters of the filename without the path)
+    participant_id = os.path.basename(file)[:7]
+    blockNr = os.path.basename(file)[-6:-4]
 
-        # Run the conversion commands
-        try:
-            # Convert to ASCII format
-            subprocess.run(f"./edf2asc -s -miss -1.0 {edf_path}", shell=True, check=True)
-            subprocess.run(f"cat {base_name}.asc | awk 'BEGIN{{FS=\" \"}}{{print $1\"\\t\"$2\"\\t\"$3\"\\t\"$4}}' > dat.tmp", shell=True, check=True)
-            subprocess.run(f"mv dat.tmp {asc_dir}/{base_name}.dat", shell=True, check=True)
-            subprocess.run(f"rm {base_name}.asc", shell=True, check=True)
+    # Define condition triggers (onsets)
+    event_id = {'11': 11, '12': 12, '22': 22}
+    events, event_id = mne.events_from_annotations(raw, event_id=event_id)
 
-            # Extract messages
-            subprocess.run(f"./edf2asc -e {edf_path}", shell=True, check=True)
-            subprocess.run(f"cat {base_name}.asc | grep -E 'MSG|START' > {base_name}.msg", shell=True, check=True)
-            subprocess.run(f"mv {base_name}.msg {asc_dir}/", shell=True, check=True)
-            subprocess.run(f"rm {base_name}.asc", shell=True, check=True)
+    # Create epochs based on condition onsets
+    epochs = mne.Epochs(raw, events, event_id, tmin=-0.5, tmax=1.5, baseline=None, preload=True, reject=None, reject_by_annotation=False)
 
-            # Move the original EDF file
-            subprocess.run(f"mv {edf_path} {edf_dir}/", shell=True, check=True)
+    # Count annotations (blinks, saccades, fixations) within each condition
+    for condition, event_code in event_id.items():
+        condition_epochs = epochs[event_code]
+        condition_times = condition_epochs.events[:, 0] / raw.info['sfreq']  # Convert sample indices to times
 
-            print(f"Successfully converted and saved files for {file}")
-        except subprocess.CalledProcessError as e:
-            print(f"Error processing {file}: {e}")
+        blink_count = 0
+        saccade_count = 0
+        fixation_count = 0
 
-        raw =  mne.io.read_raw_eyelink(ascEDFPath)
-        # Get the events from the raw data
-        events = mne.find_events(raw, stim_channel='STI 014')
-        # Create a DataFrame from the events
-        events_df = pd.DataFrame(events, columns=['onset', 'event_id', 'duration'])
-        # Save the DataFrame to a CSV file
-        csv_filename = os.path.splitext(file)[0] + '_events.csv'
-        csv_path = os.path.join(savefolder, csv_filename)
-        events_df.to_csv(csv_path, index=False)
+        for start_time in condition_times:
+            end_time = start_time + 2  # Assuming epochs are 2 seconds long
+            blinks = annotations[(annotations.description == 'BAD_blink') &
+                                  (annotations.onset >= start_time) &
+                                  (annotations.onset < end_time)]
+            saccades = annotations[(annotations.description == 'saccade') &
+                                    (annotations.onset >= start_time) &
+                                    (annotations.onset < end_time)]
+            fixations = annotations[(annotations.description == 'fixation') &
+                                     (annotations.onset >= start_time) &
+                                     (annotations.onset < end_time)]
+
+            blink_count += len(blinks)
+            saccade_count += len(saccades)
+            fixation_count += len(fixations)
+
+        # Append results for this participant and condition
+        results.append({
+            'Participant': participant_id,
+            'Block': blockNr,
+            'Condition': condition,
+            'Blink Count': blink_count,
+            'Saccade Count': saccade_count,
+            'Fixation Count': fixation_count
+        })
+
+# Convert results to a DataFrame
+df = pd.DataFrame(results)
+
+from scipy.stats import f_oneway, ttest_rel
+# Ensure numeric columns are aggregated
+numeric_columns = ['Blink Count', 'Saccade Count']
+averaged_df = df.groupby(['Participant', 'Condition'], as_index=False)[numeric_columns].mean()
+
+# Perform statistical tests
+for measure in numeric_columns:
+    print(f"\nStatistical test for {measure}:")
+    
+    # Pivot the averaged data for statistical tests
+    grouped = averaged_df.pivot(index='Participant', columns='Condition', values=measure)
+    conditions = grouped.columns
+
+    # Perform a repeated-measures ANOVA (e.g., one-way ANOVA)
+    f_stat, p_value = f_oneway(*[grouped[cond].dropna() for cond in conditions])
+    print(f"ANOVA F-statistic: {f_stat}, p-value: {p_value}")
+
+    # Perform paired t-tests between conditions
+    for i, cond1 in enumerate(conditions):
+        for cond2 in conditions[i + 1:]:
+            t_stat, p_val = ttest_rel(grouped[cond1].dropna(), grouped[cond2].dropna())
+            print(f"Paired t-test between {cond1} and {cond2}: t-statistic = {t_stat}, p-value = {p_val}")
+
+#plot
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Melt the averaged DataFrame for easier plotting
+melted_df = averaged_df.melt(id_vars=['Participant', 'Condition'], 
+                             value_vars=numeric_columns, 
+                             var_name='Measure', 
+                             value_name='Count')
+
+# Create a bar plot with grouping by Measure (to compare conditions)
+plt.figure(figsize=(10, 6))
+sns.barplot(data=melted_df, x='Measure', y='Count', hue='Condition', ci='sd', palette='viridis')
+
+# Add labels and title
+plt.title('Comparison of Conditions for Blinks, Saccades', fontsize=14)
+plt.xlabel('Measure', fontsize=12)
+plt.ylabel('Average Count', fontsize=12)
+plt.legend(title='Condition', fontsize=10)
+plt.tight_layout()
+
+# Show the plot
+plt.show()
