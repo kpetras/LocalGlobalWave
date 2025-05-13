@@ -288,6 +288,8 @@ from statsmodels.formula.api import ols
 from statsmodels.stats.anova import anova_lm
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 import pandas as pd
+import seaborn as sns
+
 
 #%%________Set files___________________________________________
 # folder = "/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/"
@@ -301,84 +303,103 @@ import pandas as pd
 # fileList = glob.glob(os.path.join(folder, "*",  "Mag_18_OpticalFlowAfterFilter_Hilbert_masked_RestingState"), recursive=True)
 # oscillationThresholdFlag = False 
 
-allMotifsFile = 'RestingStateMotifsGrad_NoThreshold_EyesClosed'
+# allMotifsFile = 'RestingStateMotifsGrad_NoThreshold_EyesClosed'
+# figfolder = folder
+# fileList = glob.glob(os.path.join(folder, "*",  "Grad_18_OpticalFlowAfterFilter_Hilbert_masked_RestingState"), recursive=True)
+# oscillationThresholdFlag = False 
+
+folder = "/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/"
 figfolder = folder
-fileList = glob.glob(os.path.join(folder, "*",  "Grad_18_OpticalFlowAfterFilter_Hilbert_masked_RestingState"), recursive=True)
-oscillationThresholdFlag = False 
-
-GA_motif_counts = []
-allmotifs = []
-allTrialInfo = []
-
-
-for sub, filePath in enumerate(fileList):
-    print("Processing file: " + filePath)
-    dataBucketName = 'UV_Angle'
-    subfolder  = os.path.basename(os.path.dirname(filePath))
-    waveData = ImportHelpers.load_wavedata_object(filePath)
-
-    #if gradiometer data, merge optical Flow
-    if 'Grad' in filePath:
-        combined_uv_map = waveData.get_data('UV_Angle_GradX') + waveData.get_data('UV_Angle_GradY')
-        CombinedUVBucket = wd.DataBucket(combined_uv_map, "CombinedUV", 'freq_trl_posx_posy_time', waveData.get_channel_names())
-        waveData.add_data_bucket(CombinedUVBucket)
-        waveData.log_history(["CombinedUV", "VectorSum"])
-        dataBucketName = 'CombinedUV'
-        waveData.delete_data_bucket('UV_Angle_GradX')
-        waveData.delete_data_bucket('UV_Angle_GradY')
-    if 'Simulations' in filePath:
-        dataBucketName = 'UV'
-
-
-    freqs= [5, 10]
-    # Find Motifs   
-    sample_rate = waveData.get_sample_rate()  # your sample rate
-    if oscillationThresholdFlag:
-        if 'Grad' in filePath:
-            powerBucketName = "PLV_and_Power" 
+modalities = ["EEG", "Mag", "Grad"]
+conditions = ["EyesClosed", "EyesOpen"]
+oscillationThresholdFlag = False
+for modality in modalities:
+    for condition in conditions:
+        if condition == "EyesClosed":
+            file_pattern = os.path.join(folder, "*", f"{modality}_18_OpticalFlowAfterFilter_Hilbert_masked_RestingStateEyesClosed")
         else:
-            powerBucketName = "PLV_andAnalyticSignal" 
-            #this one has three sets of data: PLV theta. analytic signal theta, analytic signal alpha. make temp one with analytic signal
-            tempData = waveData.get_data(powerBucketName)[[1, 2], :, :, :, :]
-            tempDataBucket = wd.DataBucket(tempData, 'temp', 
-                                        waveData.DataBuckets[dataBucketName].get_dimord(), 
-                                        waveData.DataBuckets[dataBucketName].get_channel_names() )
-            waveData.add_data_bucket(tempDataBucket)
-            powerBucketName = 'temp'
-    else:
-        powerBucketName = None
+            file_pattern = os.path.join(folder, "*", f"{modality}_18_OpticalFlowAfterFilter_Hilbert_masked_RestingState")
 
-    for freqInd in range(waveData.get_data(dataBucketName).shape[0]):
-        threshold = .85
-        pixelThreshold = .4
-        mergeThreshold = .7
-        minFrames = int(np.floor((waveData.get_sample_rate() / freqs[1])))
-        nTimepointsEdge = int(2 * (waveData.get_sample_rate() / freqs[freqInd]))
-         
-        motifs = hf.find_wave_motifs(waveData, 
-                                            dataBucketName=dataBucketName, 
-                                            oscillationThresholdDataBucket = powerBucketName,
-                                            oscillationThresholdFlag = oscillationThresholdFlag,
-                                            baselinePeriod=None,
-                                            threshold = threshold, 
-                                            nTimepointsEdge=nTimepointsEdge,
-                                            mergeThreshold = mergeThreshold, 
-                                            minFrames=minFrames, 
-                                            pixelThreshold = pixelThreshold, 
-                                            magnitudeThreshold=.1,
-                                            dataInds = (freqInd, slice(None), slice(None), slice(None), slice(None)),
-                                            Mask = True)
+        fileList = glob.glob(file_pattern, recursive=True)
+        if not fileList:
+            print(f"No files found for {modality} with {condition}")
+            continue
+        print(f"Processing {modality} with {condition}")
+
+        GA_motif_counts = []
+        allmotifs = []
+        allTrialInfo = []
 
 
-        # Add 'subject' field to each motif
-        for motif in motifs:
-            motif['subject'] = sub
-            motif['frequency'] = freqInd
-        allmotifs.extend(motifs)
+        for sub, filePath in enumerate(fileList):
+            print("Processing file: " + filePath)
+            dataBucketName = 'UV_Angle'
+            subfolder  = os.path.basename(os.path.dirname(filePath))
+            waveData = ImportHelpers.load_wavedata_object(filePath)
 
-#save all motifs
-with open(folder +  allMotifsFile +  '.pickle', 'wb') as handle:
-                pickle.dump(allmotifs, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            #if gradiometer data, merge optical Flow
+            if 'Grad' in filePath:
+                combined_uv_map = waveData.get_data('UV_Angle_GradX') + waveData.get_data('UV_Angle_GradY')
+                CombinedUVBucket = wd.DataBucket(combined_uv_map, "CombinedUV", 'freq_trl_posx_posy_time', waveData.get_channel_names())
+                waveData.add_data_bucket(CombinedUVBucket)
+                waveData.log_history(["CombinedUV", "VectorSum"])
+                dataBucketName = 'CombinedUV'
+                waveData.delete_data_bucket('UV_Angle_GradX')
+                waveData.delete_data_bucket('UV_Angle_GradY')
+            if 'Simulations' in filePath:
+                dataBucketName = 'UV'
+
+
+            freqs= [5, 10]
+            # Find Motifs   
+            sample_rate = waveData.get_sample_rate()  # your sample rate
+            if oscillationThresholdFlag:
+                if 'Grad' in filePath:
+                    powerBucketName = "PLV_and_Power" 
+                else:
+                    powerBucketName = "PLV_andAnalyticSignal" 
+                    #this one has three sets of data: PLV theta. analytic signal theta, analytic signal alpha. make temp one with analytic signal
+                    tempData = waveData.get_data(powerBucketName)[[1, 2], :, :, :, :]
+                    tempDataBucket = wd.DataBucket(tempData, 'temp', 
+                                                waveData.DataBuckets[dataBucketName].get_dimord(), 
+                                                waveData.DataBuckets[dataBucketName].get_channel_names() )
+                    waveData.add_data_bucket(tempDataBucket)
+                    powerBucketName = 'temp'
+            else:
+                powerBucketName = None
+
+            for freqInd in range(waveData.get_data(dataBucketName).shape[0]):
+                threshold = .85
+                pixelThreshold = .4
+                mergeThreshold = .7
+                minFrames = int(np.floor((waveData.get_sample_rate() / freqs[1])))
+                nTimepointsEdge = int(2 * (waveData.get_sample_rate() / freqs[freqInd]))
+                
+                motifs = hf.find_wave_motifs(waveData, 
+                                                    dataBucketName=dataBucketName, 
+                                                    oscillationThresholdDataBucket = powerBucketName,
+                                                    oscillationThresholdFlag = oscillationThresholdFlag,
+                                                    baselinePeriod=None,
+                                                    threshold = threshold, 
+                                                    nTimepointsEdge=nTimepointsEdge,
+                                                    mergeThreshold = mergeThreshold, 
+                                                    minFrames=minFrames, 
+                                                    pixelThreshold = pixelThreshold, 
+                                                    magnitudeThreshold=.1,
+                                                    dataInds = (freqInd, slice(None), slice(None), slice(None), slice(None)),
+                                                    Mask = True)
+
+
+                # Add 'subject' field to each motif
+                for motif in motifs:
+                    motif['subject'] = sub
+                    motif['frequency'] = freqInd
+                allmotifs.extend(motifs)
+
+        #save all motifs
+        allMotifsFile = f"RestingStateMotifs{modality}_NoThreshold_{condition}"
+        with open(folder + allMotifsFile + '.pickle', 'wb') as handle:
+            pickle.dump(allmotifs, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 
@@ -396,117 +417,239 @@ for key in waveData.DataBuckets.keys():
 dataBucketName = first_key_with_uv
 
 #____________________________________________________
-#temp, just to compare plots with task data 
-folder  = "/mnt/Data/DuguelabCluster/wavesim/LoGlo/"
-allMotifsFile = 'AllCondsMotifsEEG_NoThreshold'
-#___________________________________________________
-GA_motif_counts = []
-allTrialInfo = []
-#% average top motifs per subject
-with open(folder   + allMotifsFile + '.pickle', 'rb') as handle:
-    allmotifs = pickle.load(handle)
+# #temp, just to compare plots with task data 
+# folder  = "/mnt/Data/DuguelabCluster/wavesim/LoGlo/"
+# allMotifsFile = 'AllCondsMotifsEEG_NoThreshold'
+# #___________________________________________________
+
+#%% all resting state motifs
+folder = "/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/"
+file_pattern = os.path.join(folder, "RestingStateMotifs*.pickle")
+
+# Find all matching files
+allMotifsFiles = glob.glob(file_pattern)
+all_data = []
+# Loop over all matching files
+for allMotifsFile in allMotifsFiles:
+    # Extract the base filename (without extension) for use in titles and output paths
+    base_filename = os.path.splitext(os.path.basename(allMotifsFile))[0]
+    fullFileName = base_filename + '.pickle'
+    print(f"Processing file: {base_filename}")
+    modality = "EEG" if "EEG" in base_filename else "Mag" if "Mag" in base_filename else "Grad"
+    condition = "EyesClosed" if "EyesClosed" in base_filename else "EyesOpen"
+
+    GA_motif_counts = []
+    allTrialInfo = []
+    #% average top motifs per subject
+    with open(folder   + base_filename + '.pickle' , 'rb') as handle:
+        allmotifs = pickle.load(handle)
 
 
-GA_motifs = {}
-for freqInd in range(2):
-    filtered_motifs = [motif for motif in allmotifs if motif['frequency'] == freqInd]
-    merge_threshold = .7
-    pixelThreshold = .4
-    print("Merges if vector angles are below " + str(np.degrees(np.arccos(merge_threshold))) + " degrees")
-    GA_motifs[freqInd] = hf.merge_motifs_across_subjects(filtered_motifs, 
-                                                         mergeThreshold = merge_threshold, 
-                                                         pixelThreshold = pixelThreshold)
+    GA_motifs = {}
+    for freqInd in range(2):
+        filtered_motifs = [motif for motif in allmotifs if motif['frequency'] == freqInd]
+        merge_threshold = .7
+        pixelThreshold = .4
+        print("Merges if vector angles are below " + str(np.degrees(np.arccos(merge_threshold))) + " degrees")
+        GA_motifs[freqInd] = hf.merge_motifs_across_subjects(filtered_motifs, 
+                                                            mergeThreshold = merge_threshold, 
+                                                            pixelThreshold = pixelThreshold)
+        
+
+    max_timepoint = waveData.get_data(dataBucketName).shape[-1]
+
+    nSubjects = len(fileList)
+    nTimepoints = max_timepoint
+    nFrequencies = 2  
     
+    # find Indices of Motif to keep and reduce GA_motifs to GA_sorted
+    nTrials = waveData.get_data(dataBucketName).shape[1]
+    theta_array = np.zeros((nSubjects, nTrials, nTimepoints), dtype=int)-1
+    alpha_array = np.zeros((nSubjects, nTrials, nTimepoints), dtype=int)-1
+    freqs = ['theta', 'alpha']
+    freq_arrays = [theta_array, alpha_array]
+    for freq in range(len(GA_motifs)):
+        tempGA = GA_motifs[freq]
+        for sub in range(nSubjects):          
+            tempList = [[-1 for _ in range(nTimepoints)] for _ in range(nTrials)]
+            for motifInd, motif in enumerate(tempGA):
+                trial_frames_list = motif['trial_frames']
+                for trial_frame in trial_frames_list:
+                    subject_number, (trial, (start_timepoint, end_timepoint)) = trial_frame
+                    if subject_number == sub:
+                        if 0 <= trial < nTrials and 0 <= start_timepoint < nTimepoints and 0 <= end_timepoint <= nTimepoints:
+                            for timepoint in range(start_timepoint, end_timepoint):
+                                tempList[trial][timepoint] = motifInd 
+            # Convert tempList to a NumPy array and store it in the corresponding frequency array
+            freq_arrays[freq][sub, :, :] = np.array(tempList)
 
-max_timepoint = waveData.get_data(dataBucketName).shape[-1]
+    time_vector = waveData.get_time()[:-2]
 
-nSubjects = len(fileList)
-nTimepoints = max_timepoint
-nFrequencies = 2  
-#%% find Indices of Motif to keep and reduce GA_motifs to GA_sorted
-nTrials = waveData.get_data(dataBucketName).shape[1]
-theta_array = np.zeros((nSubjects, nTrials, nTimepoints), dtype=int)-1
-alpha_array = np.zeros((nSubjects, nTrials, nTimepoints), dtype=int)-1
-freqs = ['theta', 'alpha']
-freq_arrays = [theta_array, alpha_array]
-for freq in range(len(GA_motifs)):
-    tempGA = GA_motifs[freq]
-    for sub in range(nSubjects):          
-        tempList = [[-1 for _ in range(nTimepoints)] for _ in range(nTrials)]
-        for motifInd, motif in enumerate(tempGA):
-            trial_frames_list = motif['trial_frames']
-            for trial_frame in trial_frames_list:
-                subject_number, (trial, (start_timepoint, end_timepoint)) = trial_frame
-                if subject_number == sub:
-                    if 0 <= trial < nTrials and 0 <= start_timepoint < nTimepoints and 0 <= end_timepoint <= nTimepoints:
-                        for timepoint in range(start_timepoint, end_timepoint):
-                            tempList[trial][timepoint] = motifInd 
-        # Convert tempList to a NumPy array and store it in the corresponding frequency array
-        freq_arrays[freq][sub, :, :] = np.array(tempList)
+    data = [[],[]]
 
-time_vector = waveData.get_time()[:-2]
+    # Iterate through subjects and trials
+    for sub in range(nSubjects):
+        for trial in range(nTrials):
+            for timepoint in range(nTimepoints):
+                for freqInd, freq_array in enumerate(freq_arrays):
+                    motifInd = freq_array[sub, trial, timepoint]
+                    data[freqInd].append([sub, trial, timepoint, motifInd])
 
-data = [[],[]]
+    dfTheta = pd.DataFrame(data[0], columns=['Subject', 'Trial',  'Timepoint', 'MotifInd'])
+    dfAlpha = pd.DataFrame(data[1], columns=['Subject', 'Trial',  'Timepoint', 'MotifInd'])
+    #Make dataframe with all modalities and conditions    
+    for df, freqName in zip([dfTheta, dfAlpha], ['Theta', 'Alpha']):
+        df['Modality'] = modality
+        df['Condition'] = condition
+        df['Frequency'] = freqName
+        all_data.append(df)
 
-# Iterate through subjects and trials
-for sub in range(nSubjects):
-    for trial in range(nTrials):
-        for timepoint in range(nTimepoints):
-            for freqInd, freq_array in enumerate(freq_arrays):
-                motifInd = freq_array[sub, trial, timepoint]
-                data[freqInd].append([sub, trial, timepoint, motifInd])
 
-dfTheta = pd.DataFrame(data[0], columns=['Subject', 'Trial',  'Timepoint', 'MotifInd'])
-dfAlpha = pd.DataFrame(data[1], columns=['Subject', 'Trial',  'Timepoint', 'MotifInd'])
-    
-cmap = mcolors.ListedColormap(['grey', '#480384', '#f28c00', '#d67258', '#416ae4', '#378b8c', '#7bc35b'])
-bounds = [-1, 0, 1, 2, 3, 4, 5]
-norm = mcolors.BoundaryNorm(bounds, cmap.N)
+    cmap = mcolors.ListedColormap(['grey', '#480384', '#f28c00', '#d67258', '#416ae4', '#378b8c', '#7bc35b'])
+    bounds = [-1, 0, 1, 2, 3, 4, 5]
+    norm = mcolors.BoundaryNorm(bounds, cmap.N)
 
-# Iterate over frequencies and their corresponding dataframes
-for freqInd, (df, freqName) in enumerate(zip([dfTheta, dfAlpha], ['Theta', 'Alpha'])):
-    # Reduce proportions plot to show only the 6 most frequent motifs (including -1)
-    top_6_motifs = df['MotifInd'].value_counts(normalize=True).sort_values(ascending=False).head(7)
-    top_6_indices = top_6_motifs.index
+    # Iterate over frequencies 
+    for freqInd, (df, freqName) in enumerate(zip([dfTheta, dfAlpha], ['Theta', 'Alpha'])):
+        top_6_motifs = df['MotifInd'].value_counts(normalize=True).sort_values(ascending=False).head(7) 
+        top_6_indices = top_6_motifs.index
 
-    # Create the figure and subplots
-    fig, axs = plt.subplots(2, len(top_6_indices), figsize=(18, 12), gridspec_kw={'height_ratios': [1, 2]})
+        fig = plt.figure(figsize=(18, 12))
+        gs = gridspec.GridSpec(2, len(top_6_indices), height_ratios=[1, 2], figure=fig)
+        ax_bar = fig.add_subplot(gs[0, :])
 
-    # Bar plot (top row, spanning all columns)
-    ax_bar = fig.add_subplot(2, 1, 1)
-    colors = [cmap(norm(motifInd)) for motifInd in top_6_indices]
-    top_6_motifs.plot(kind='bar', color=colors, edgecolor='black', ax=ax_bar)
-    ax_bar.set_xlabel('MotifInd')
-    ax_bar.set_ylabel('Proportion of Timepoints')
-    ax_bar.set_title(f'Proportion of Timepoints for Top 6 Motifs ({freqName})')
-    ax_bar.set_xticks(range(len(top_6_indices)))
-    ax_bar.set_xticklabels(top_6_indices, rotation=45)
-    ax_bar.grid(axis='y', linestyle='--', alpha=0.7)
+        # Bar plot
+        # Calculate subject-level motif proportions
+        subject_motif_counts = (
+            df[df['MotifInd'].isin(top_6_indices)]
+            .groupby(['Subject', 'MotifInd'])
+            .size()
+            .unstack(fill_value=0)
+        )
 
-    # Quiver plots (second row)
-    for i, motifInd in enumerate(top_6_indices):
-        ax = axs[1, i]
-        if motifInd == -1:
-            # Placeholder for "no motif"
-            ax.text(0.5, 0.5, 'No Motif', fontsize=12, ha='center', va='center', color='red')
-            ax.set_facecolor('white')
-            ax.set_title(f'Motif {motifInd}')
-            ax.set_xticks([])
-            ax.set_yticks([])
-        else:
-            # Plot the actual quiver plot for valid motifs
-            motif_array = GA_motifs[freqInd][motifInd]['average']
-            ax.quiver(-np.real(motif_array), -np.imag(motif_array), color='black')
-            ax.set_facecolor('white')
-            ax.set_aspect('equal')
-            ax.set_title(f'Motif {motifInd}')
+        # Normalize by total timepoints per subject
+        subject_total_counts = df.groupby('Subject').size()
+        subject_motif_proportions = subject_motif_counts.div(subject_total_counts, axis=0)
 
-    # Adjust layout and save the figure
+        # Compute mean and standard error
+        mean_proportions = subject_motif_proportions.mean()
+        sem_proportions = subject_motif_proportions.std()
+
+        # Plot with error bars
+        colors = [cmap(norm(motifInd)) for motifInd in top_6_indices]
+        x_pos = np.arange(len(top_6_indices))
+
+        ax_bar.bar(
+            x_pos,
+            mean_proportions[top_6_indices],
+            yerr=sem_proportions[top_6_indices],
+            color=colors,
+            edgecolor='black',
+            capsize=5
+        )
+        ax_bar.set_xticks(x_pos)
+        ax_bar.set_xticklabels(top_6_indices)
+        ax_bar.set_ylabel('Proportion of Timepoints')
+        ax_bar.set_title(f'{base_filename}: Proportion of Timepoints for Top 6 Motifs ({freqName})')
+
+        ax_bar.grid(axis='y', linestyle='--', alpha=0.7)
+        ax_bar.set_ylim(0, .85)
+        plt.tight_layout()
+        
+        # quiver plots
+        axs = [fig.add_subplot(gs[1, i]) for i in range(len(top_6_indices))]
+
+        for i, motifInd in enumerate(top_6_indices):
+            ax = axs[i]
+            if motifInd == -1:
+                ax.text(0.5, 0.5, 'No Motif', fontsize=12, ha='center', va='center', color='red')
+                ax.set_facecolor('white')
+                ax.set_title(f'Motif {motifInd}')
+                ax.set_xticks([])
+                ax.set_yticks([])
+            else:
+                motif_array = GA_motifs[freqInd][motifInd]['average']
+                ax.quiver(-np.real(motif_array), -np.imag(motif_array), color='black')
+                ax.set_facecolor('white')
+                ax.set_aspect('equal')
+                ax.set_title(f'Motif {motifInd}')
+        total_proportion = top_6_motifs.sum()
+        fig.text(0.5, 0.02, f'Total Proportion of Timepoints (including -1): {total_proportion:.2f}', 
+             ha='center', fontsize=12, color='black')
+
+        plt.tight_layout()
+        output_path = f"{figfolder}{base_filename}_{freqName}_MotifBarAndQuiverPlots.svg"
+        plt.savefig(output_path, format='svg', dpi=1200)
+        plt.savefig(output_path.replace('.svg', '.jpg'), format='jpg')
+        plt.show()
+
+#compare between modalities
+combined_df = pd.concat(all_data, ignore_index=True)
+# Group data by frequency and plot separately
+for freqName in combined_df["Frequency"].unique():
+    # Filter data for the current frequency
+    freq_df = combined_df[combined_df["Frequency"] == freqName]
+
+    # Calculate the proportion of "no motif" (MotifInd = -1) for each modality and condition
+    subject_counts = freq_df.groupby(["Subject", "Modality", "Condition"]).size().rename("Total")
+    no_motif_counts = (
+        freq_df[freq_df["MotifInd"] == -1]
+        .groupby(["Subject", "Modality", "Condition"])
+        .size()
+        .rename("NoMotif")
+    )
+
+    # Combine and compute proportions
+    subject_df = pd.concat([subject_counts, no_motif_counts], axis=1).fillna(0)
+    subject_df["ProportionNoMotif"] = subject_df["NoMotif"] / subject_df["Total"]
+    subject_df = subject_df.reset_index()
+
+    # Compute mean and SD per Modality x Condition
+    summary_df = (
+        subject_df
+        .groupby(["Modality", "Condition"])["ProportionNoMotif"]
+        .agg(['mean', 'std'])
+        .reset_index()
+        .rename(columns={"mean": "ProportionNoMotif", "std": "STD"})
+    )
+
+    # Plot the results
+    plt.figure(figsize=(12, 8))
+    ax = sns.barplot(
+        data=summary_df,
+        x="Modality",
+        y="ProportionNoMotif",
+        hue="Condition",
+        palette="muted",
+        ci=None,
+        errorbar=None
+    )
+
+    # Add error bars manually using the bar container positions
+    for bar in ax.patches:
+        x = bar.get_x() + bar.get_width() / 2  # center of the bar
+        y = bar.get_height()                   # top of the bar (actual height)
+        
+        # Match the SEM from summary_df based on Modality and Condition
+        modality = bar.get_x()
+        condition = bar.get_label()  # sometimes unreliable; safer to re-index below
+
+    for bar, (_, row) in zip(ax.patches, summary_df.iterrows()):
+        x = bar.get_x() + bar.get_width() / 2
+        y = bar.get_height()
+        yerr = row["STD"]
+        ax.errorbar(x, y, yerr=yerr, fmt='none', c='black', capsize=5, lw=1.5)
+
+    # Final plot styling
+    plt.title(f"Proportion of No Motif (MotifInd = -1) by Modality and Condition ({freqName})")
+    plt.ylabel("Proportion of No Motif")
+    plt.xlabel("Modality")
+    plt.ylim(0, 1)
+    plt.legend(title="Condition")
     plt.tight_layout()
-    output_path = f"{figfolder}{allMotifsFile}_{freqName}_MotifBarAndQuiverPlots.svg"
-    plt.savefig(output_path, format='svg', dpi=1200)
+    plt.savefig(f"{figfolder}ProportionNoMotifByModalityAndCondition_{freqName}.svg", format='svg', dpi=1200)
+    plt.savefig(f"{figfolder}ProportionNoMotifByModalityAndCondition_{freqName}.jpg", format='jpg')
     plt.show()
-
 # # dfTheta.to_csv(f"{figfolder}ThetaMotifCountsFull.csv", index=False)
 # # dfAlpha.to_csv(f"{figfolder}AlphaMotifCountsFull.csv", index=False)
 # # Group by Condition, Timepoint, Frequency, and MotifInd and calculate the average count over subjects
@@ -609,3 +752,5 @@ for freqInd, (df, freqName) in enumerate(zip([dfTheta, dfAlpha], ['Theta', 'Alph
 #     plt.savefig(f"{figfolder}MotifCountsAllSubsAllTrialsAllTimes_{freq}.svg", format='svg', dpi=1200)
 #     plt.show()
 
+
+# %%
