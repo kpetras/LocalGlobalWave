@@ -293,10 +293,10 @@ import seaborn as sns
 
 #%%________Set files___________________________________________
 # folder = "/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/"
-# allMotifsFile = 'RestingStateMotifsEEG_NoThreshold_EyesClosed'
-# figfolder = folder 
-# fileList = glob.glob(os.path.join(folder, "*",  "EEG_18_OpticalFlowAfterFilter_Hilbert_masked_RestingStateEyesClosed"), recursive=True)
-# oscillationThresholdFlag = False 
+allMotifsFile = 'RestingStateMotifsEEG_NoThreshold_EyesClosed'
+figfolder = folder 
+fileList = glob.glob(os.path.join(folder, "*",  "EEG_18_OpticalFlowAfterFilter_Hilbert_masked_RestingStateEyesClosed"), recursive=True)
+oscillationThresholdFlag = False 
 
 # allMotifsFile = 'RestingStateMotifsMag_NoThreshold_EyesClosed'
 # figfolder = folder
