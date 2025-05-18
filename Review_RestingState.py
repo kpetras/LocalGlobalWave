@@ -255,8 +255,6 @@ df.to_csv(savefolder + '/theta_alpha_values.csv', index=False)
 #%%
 import sys
 import os
-
-# Add the parent directory of the script (LocalGlobalWave) to the Python path
 sys.path.append('/mnt/Data/LoGlo/LocalGlobalWave/LocalGlobalWave/')
 
 import glob
@@ -293,10 +291,10 @@ import seaborn as sns
 
 #%%________Set files___________________________________________
 # folder = "/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/"
-allMotifsFile = 'RestingStateMotifsEEG_NoThreshold_EyesClosed'
-figfolder = folder 
-fileList = glob.glob(os.path.join(folder, "*",  "EEG_18_OpticalFlowAfterFilter_Hilbert_masked_RestingStateEyesClosed"), recursive=True)
-oscillationThresholdFlag = False 
+# allMotifsFile = 'RestingStateMotifsEEG_NoThreshold_EyesClosed'
+# figfolder = folder 
+# fileList = glob.glob(os.path.join(folder, "*",  "EEG_18_OpticalFlowAfterFilter_Hilbert_masked_RestingStateEyesClosed"), recursive=True)
+# oscillationThresholdFlag = False 
 
 # allMotifsFile = 'RestingStateMotifsMag_NoThreshold_EyesClosed'
 # figfolder = folder
@@ -314,92 +312,109 @@ modalities = ["EEG", "Mag", "Grad"]
 conditions = ["EyesClosed", "EyesOpen"]
 oscillationThresholdFlag = False
 for modality in modalities:
-    for condition in conditions:
-        if condition == "EyesClosed":
-            file_pattern = os.path.join(folder, "*", f"{modality}_18_OpticalFlowAfterFilter_Hilbert_masked_RestingStateEyesClosed")
-        else:
-            file_pattern = os.path.join(folder, "*", f"{modality}_18_OpticalFlowAfterFilter_Hilbert_masked_RestingState")
-
-        fileList = glob.glob(file_pattern, recursive=True)
-        if not fileList:
-            print(f"No files found for {modality} with {condition}")
-            continue
-        print(f"Processing {modality} with {condition}")
-
-        GA_motif_counts = []
-        allmotifs = []
-        allTrialInfo = []
+    file_pattern_closed = os.path.join(folder, "*", f"{modality}_18_OpticalFlowAfterFilter_Hilbert_masked_RestingStateEyesClosed")
+    file_pattern_open = os.path.join(folder, "*", f"{modality}_18_OpticalFlowAfterFilter_Hilbert_masked_RestingState")
+    files_closed = sorted(glob.glob(file_pattern_closed, recursive=True))
+    files_open = sorted(glob.glob(file_pattern_open, recursive=True))
 
 
-        for sub, filePath in enumerate(fileList):
-            print("Processing file: " + filePath)
-            dataBucketName = 'UV_Angle'
-            subfolder  = os.path.basename(os.path.dirname(filePath))
-            waveData = ImportHelpers.load_wavedata_object(filePath)
+    GA_motif_counts = []
+    allmotifs = []
+    allTrialInfo = []
 
-            #if gradiometer data, merge optical Flow
+    for sub, (file_closed, file_open) in enumerate(zip(files_closed, files_open)):
+        dataBucketName = 'UV_Angle'
+        wd_open = ImportHelpers.load_wavedata_object(file_open)
+        print("length of open file: " + str(wd_open.get_data('NBFiltered').shape[1]))
+        wd_closed = ImportHelpers.load_wavedata_object(file_closed)
+        print("length of closed file: " + str(wd_closed.get_data('NBFiltered').shape[1]))
+        #remove data buckets that are not present in both files and the "Mask" data bucket        
+        for key in list(wd_open.DataBuckets.keys()):
+            if key not in wd_closed.DataBuckets.keys():
+                wd_open.delete_data_bucket(key)
+        for key in list(wd_closed.DataBuckets.keys()):
+            if key not in wd_open.DataBuckets.keys():
+                wd_closed.delete_data_bucket(key)
+        Mask = wd_open.get_data('Mask')
+        wd_open.delete_data_bucket("Mask")
+        wd_closed.delete_data_bucket("Mask")
+        #prune any trials above 60
+        trials_to_remove = []
+        for i in range(wd_open.get_data('NBFiltered').shape[1]):
+            if i >= 60:
+                trials_to_remove.append(i)
+        wd_open.prune_trials(trials_to_remove)
+        trials_to_remove = []
+        for i in range(wd_closed.get_data('NBFiltered').shape[1]):
+            if i >= 60:
+                trials_to_remove.append(i)
+        wd_closed.prune_trials(trials_to_remove)
+
+        waveData = hf.merge_wavedata_objects([wd_open, wd_closed])
+        #add Mask Bucket back
+        MaskBucket = wd.DataBucket(Mask, "Mask", 'posx_posy', waveData.get_channel_names())
+        waveData.add_data_bucket(MaskBucket)
+        #if gradiometer data, merge optical Flow
+        if modality == 'Grad':
+            combined_uv_map = waveData.get_data('UV_Angle_GradX') + waveData.get_data('UV_Angle_GradY')
+            CombinedUVBucket = wd.DataBucket(combined_uv_map, "CombinedUV", 'freq_trl_posx_posy_time', waveData.get_channel_names())
+            waveData.add_data_bucket(CombinedUVBucket)
+            waveData.log_history(["CombinedUV", "VectorSum"])
+            dataBucketName = 'CombinedUV'
+            waveData.delete_data_bucket('UV_Angle_GradX')
+            waveData.delete_data_bucket('UV_Angle_GradY')
+
+
+        freqs= [5, 10]
+        # Find Motifs   
+        sample_rate = waveData.get_sample_rate()  # your sample rate
+        if oscillationThresholdFlag:
             if 'Grad' in filePath:
-                combined_uv_map = waveData.get_data('UV_Angle_GradX') + waveData.get_data('UV_Angle_GradY')
-                CombinedUVBucket = wd.DataBucket(combined_uv_map, "CombinedUV", 'freq_trl_posx_posy_time', waveData.get_channel_names())
-                waveData.add_data_bucket(CombinedUVBucket)
-                waveData.log_history(["CombinedUV", "VectorSum"])
-                dataBucketName = 'CombinedUV'
-                waveData.delete_data_bucket('UV_Angle_GradX')
-                waveData.delete_data_bucket('UV_Angle_GradY')
-            if 'Simulations' in filePath:
-                dataBucketName = 'UV'
-
-
-            freqs= [5, 10]
-            # Find Motifs   
-            sample_rate = waveData.get_sample_rate()  # your sample rate
-            if oscillationThresholdFlag:
-                if 'Grad' in filePath:
-                    powerBucketName = "PLV_and_Power" 
-                else:
-                    powerBucketName = "PLV_andAnalyticSignal" 
-                    #this one has three sets of data: PLV theta. analytic signal theta, analytic signal alpha. make temp one with analytic signal
-                    tempData = waveData.get_data(powerBucketName)[[1, 2], :, :, :, :]
-                    tempDataBucket = wd.DataBucket(tempData, 'temp', 
-                                                waveData.DataBuckets[dataBucketName].get_dimord(), 
-                                                waveData.DataBuckets[dataBucketName].get_channel_names() )
-                    waveData.add_data_bucket(tempDataBucket)
-                    powerBucketName = 'temp'
+                powerBucketName = "PLV_and_Power" 
             else:
-                powerBucketName = None
+                powerBucketName = "PLV_andAnalyticSignal" 
+                #this one has three sets of data: PLV theta. analytic signal theta, analytic signal alpha. make temp one with analytic signal
+                tempData = waveData.get_data(powerBucketName)[[1, 2], :, :, :, :]
+                tempDataBucket = wd.DataBucket(tempData, 'temp', 
+                                            waveData.DataBuckets[dataBucketName].get_dimord(), 
+                                            waveData.DataBuckets[dataBucketName].get_channel_names() )
+                waveData.add_data_bucket(tempDataBucket)
+                powerBucketName = 'temp'
+        else:
+            powerBucketName = None
 
-            for freqInd in range(waveData.get_data(dataBucketName).shape[0]):
-                threshold = .85
-                pixelThreshold = .4
-                mergeThreshold = .7
-                minFrames = int(np.floor((waveData.get_sample_rate() / freqs[1])))
-                nTimepointsEdge = int(2 * (waveData.get_sample_rate() / freqs[freqInd]))
-                
-                motifs = hf.find_wave_motifs(waveData, 
-                                                    dataBucketName=dataBucketName, 
-                                                    oscillationThresholdDataBucket = powerBucketName,
-                                                    oscillationThresholdFlag = oscillationThresholdFlag,
-                                                    baselinePeriod=None,
-                                                    threshold = threshold, 
-                                                    nTimepointsEdge=nTimepointsEdge,
-                                                    mergeThreshold = mergeThreshold, 
-                                                    minFrames=minFrames, 
-                                                    pixelThreshold = pixelThreshold, 
-                                                    magnitudeThreshold=.1,
-                                                    dataInds = (freqInd, slice(None), slice(None), slice(None), slice(None)),
-                                                    Mask = True)
+        for freqInd in range(waveData.get_data(dataBucketName).shape[0]):
+            threshold = .85
+            pixelThreshold = .4
+            mergeThreshold = .7
+            minFrames = int(np.floor((waveData.get_sample_rate() / freqs[1])))
+            nTimepointsEdge = int(2 * (waveData.get_sample_rate() / freqs[freqInd]))
+            
+            motifs = hf.find_wave_motifs(waveData, 
+                                                dataBucketName=dataBucketName, 
+                                                oscillationThresholdDataBucket = powerBucketName,
+                                                oscillationThresholdFlag = oscillationThresholdFlag,
+                                                baselinePeriod=None,
+                                                threshold = threshold, 
+                                                nTimepointsEdge=nTimepointsEdge,
+                                                mergeThreshold = mergeThreshold, 
+                                                minFrames=minFrames, 
+                                                pixelThreshold = pixelThreshold, 
+                                                magnitudeThreshold=.1,
+                                                dataInds = (freqInd, slice(None), slice(None), slice(None), slice(None)),
+                                                Mask = True)
 
 
-                # Add 'subject' field to each motif
-                for motif in motifs:
-                    motif['subject'] = sub
-                    motif['frequency'] = freqInd
-                allmotifs.extend(motifs)
+            # Add 'subject' field to each motif
+            for motif in motifs:
+                motif['subject'] = sub
+                motif['frequency'] = freqInd
+            allmotifs.extend(motifs)
 
-        #save all motifs
-        allMotifsFile = f"RestingStateMotifs{modality}_NoThreshold_{condition}"
-        with open(folder + allMotifsFile + '.pickle', 'wb') as handle:
-            pickle.dump(allmotifs, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    #save all motifs
+    allMotifsFile = f"RestingStateMotifs{modality}_NoThreshold_EyesOpenAndClosed"
+    with open(folder + allMotifsFile + '.pickle', 'wb') as handle:
+        pickle.dump(allmotifs, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 
@@ -424,24 +439,21 @@ dataBucketName = first_key_with_uv
 
 #%% all resting state motifs
 folder = "/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/"
-file_pattern = os.path.join(folder, "RestingStateMotifs*.pickle")
 
 # Find all matching files
-allMotifsFiles = glob.glob(file_pattern)
 all_data = []
 # Loop over all matching files
-for allMotifsFile in allMotifsFiles:
+for modality in modalities:
+    allMotifsFile = f"RestingStateMotifs{modality}_NoThreshold_EyesOpenAndClosed"
+
     # Extract the base filename (without extension) for use in titles and output paths
-    base_filename = os.path.splitext(os.path.basename(allMotifsFile))[0]
-    fullFileName = base_filename + '.pickle'
-    print(f"Processing file: {base_filename}")
-    modality = "EEG" if "EEG" in base_filename else "Mag" if "Mag" in base_filename else "Grad"
-    condition = "EyesClosed" if "EyesClosed" in base_filename else "EyesOpen"
+    fullFileName = allMotifsFile + '.pickle'
+    print(f"Processing file: {allMotifsFile}")
 
     GA_motif_counts = []
     allTrialInfo = []
     #% average top motifs per subject
-    with open(folder   + base_filename + '.pickle' , 'rb') as handle:
+    with open(folder   + fullFileName, 'rb') as handle:
         allmotifs = pickle.load(handle)
 
 
@@ -500,7 +512,7 @@ for allMotifsFile in allMotifsFiles:
     #Make dataframe with all modalities and conditions    
     for df, freqName in zip([dfTheta, dfAlpha], ['Theta', 'Alpha']):
         df['Modality'] = modality
-        df['Condition'] = condition
+        df['Condition'] = df['Trial'].apply("EyesOpen" if trial < 60 else "EyesClosed")#we simply cut out extra trial above, so this s good enough for now
         df['Frequency'] = freqName
         all_data.append(df)
 
