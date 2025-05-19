@@ -290,10 +290,11 @@ from statsmodels.stats.multicomp import pairwise_tukeyhsd
 import pandas as pd
 
 #%%________Set files___________________________________________
-# folder = "/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/"
-allMotifsFile = 'RestingStateMotifsEEG_NoThreshold_EyesClosed'
+folder = "/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/"
+
+allMotifsFile = 'RestingStateMotifsEEG_NoThreshold'
 figfolder = folder 
-fileList = glob.glob(os.path.join(folder, "*",  "EEG_18_OpticalFlowAfterFilter_Hilbert_masked_RestingStateEyesClosed"), recursive=True)
+fileList = glob.glob(os.path.join(folder, "*",  "EEG_18_OpticalFlowAfterFilter_Hilbert_masked_RestingState"), recursive=True)
 oscillationThresholdFlag = False 
 
 # allMotifsFile = 'RestingStateMotifsMag_NoThreshold_EyesClosed'
@@ -395,10 +396,10 @@ for key in waveData.DataBuckets.keys():
         break
 dataBucketName = first_key_with_uv
 
-# #____________________________________________________
+#%%____________________________________________________
 # #temp, just to compare plots with task data 
 # folder  = "/mnt/Data/DuguelabCluster/wavesim/LoGlo/"
-# allMotifsFile = 'AllCondsMotifsEEG_NoThreshold'
+# allMotifsFile = 'RestingStateMotifsGrad_NoThreshold'
 # #___________________________________________________
 GA_motif_counts = []
 allTrialInfo = []
@@ -423,7 +424,8 @@ max_timepoint = waveData.get_data(dataBucketName).shape[-1]
 nSubjects = len(fileList)
 nTimepoints = max_timepoint
 nFrequencies = 2  
-#%% find Indices of Motif to keep and reduce GA_motifs to GA_sorted
+
+#find Indices of Motif to keep and reduce GA_motifs to GA_sorted
 nTrials = waveData.get_data(dataBucketName).shape[1]
 theta_array = np.zeros((nSubjects, nTrials, nTimepoints), dtype=int)-1
 alpha_array = np.zeros((nSubjects, nTrials, nTimepoints), dtype=int)-1
@@ -501,10 +503,13 @@ for freqInd, (df, freqName) in enumerate(zip([dfTheta, dfAlpha], ['Theta', 'Alph
             ax.set_aspect('equal')
             ax.set_title(f'Motif {motifInd}')
 
-    # Adjust layout and save the figure
     plt.tight_layout()
-    output_path = f"{figfolder}{allMotifsFile}_{freqName}_MotifBarAndQuiverPlots.svg"
-    plt.savefig(output_path, format='svg', dpi=1200)
+    output_path_svg = f"{figfolder}{allMotifsFile}_{freqName}_MotifBarAndQuiverPlots.svg"
+    plt.savefig(output_path_svg, format='svg', dpi=1200)
+
+    output_path_jpg = f"{figfolder}{allMotifsFile}_{freqName}_MotifBarAndQuiverPlots.jpg"
+    plt.savefig(output_path_jpg, format='jpg', dpi=300)
+
     plt.show()
 
 # # dfTheta.to_csv(f"{figfolder}ThetaMotifCountsFull.csv", index=False)
