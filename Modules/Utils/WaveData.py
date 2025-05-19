@@ -154,18 +154,22 @@ class WaveData():
         self.DataBuckets[self.ActiveDataBucket]._data = self.DataBuckets[self.ActiveDataBucket]._data.take(indices=range(t0,t1), axis = timedim[0])
         self.log_history(["Crop", "Start",t0, "Stop", t1])  
     
-    def prune_trials(self, trials_to_remove):
+    def prune_trials(self, trials_to_remove, dataBucketName=None):
         """Prune trials from the data and trialInfo list.
-        Operation is performed on the active data bucket.
+        If dataBucketName is None, operation is performed on all data buckets.
         Args:
             trials_to_remove (list): A list of trial indices to remove.
+            dataBucketName (str, optional): Name of the data bucket to prune. If None, prune all.
         """
-        dimensions = self.DataBuckets[self.ActiveDataBucket]._dimord.split("_")
-        trialdim = [ind for ind, item in enumerate(dimensions) if re.search("trl", item)]
-        self.DataBuckets[self.ActiveDataBucket]._data = np.delete(self.DataBuckets[self.ActiveDataBucket]._data, trials_to_remove, axis=trialdim[0])
+        buckets = [dataBucketName] if dataBucketName else list(self.DataBuckets.keys())
+        for bucket in buckets:
+            dimensions = self.DataBuckets[bucket]._dimord.split("_")
+            trialdim = [ind for ind, item in enumerate(dimensions) if re.search("trl", item)]
+            if trialdim:
+                self.DataBuckets[bucket]._data = np.delete(self.DataBuckets[bucket]._data, trials_to_remove, axis=trialdim[0])
+                print(f'Pruned {len(trials_to_remove)} trials from dataBucket {bucket}')
+                print(f'New data shape: {self.DataBuckets[bucket]._data.shape}')
         self._trialInfo = [trial for i, trial in enumerate(self._trialInfo) if i not in trials_to_remove]
-        print('Pruned ' + str(len(trials_to_remove)) + ' trials from dataBucket ' + self.ActiveDataBucket)
-        print('New data shape: ' + str(self.DataBuckets[self.ActiveDataBucket]._data.shape))
 
     def log_history(self, log):
         if (not(len(log) >= 2)):
