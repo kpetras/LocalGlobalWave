@@ -614,3 +614,5 @@ for freqInd, (df, freqName) in enumerate(zip([dfTheta, dfAlpha], ['Theta', 'Alph
 #     plt.savefig(f"{figfolder}MotifCountsAllSubsAllTrialsAllTimes_{freq}.svg", format='svg', dpi=1200)
 #     plt.show()
 
+
+# %%
