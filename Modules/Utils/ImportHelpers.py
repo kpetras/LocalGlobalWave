@@ -6,9 +6,9 @@ def load_MNE_data(filename):
     data = mne.read_epochs(filename)
     return data
 
-def load_MNE_fif_data(filename):
+def load_MNE_fif_data(filename, **kwargs):
     import mne.io
-    data = mne.io.read_raw_fif(filename, preload=True)
+    data = mne.io.read_raw_fif(filename, **kwargs)
     return data
 
 def load_channel_positions(filename):

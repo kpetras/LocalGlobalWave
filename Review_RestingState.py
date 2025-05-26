@@ -535,7 +535,10 @@ motif_colors = [
     ("#d67258", "#f2b8a0"),  # brownish (darker, lighter)
     ("#480384", "#b299c6"),  # purple (darker, lighter)
 ]
+#load all_df
+subject_level_rows = []
 
+all_df = pd.read_csv(f"{figfolder}AllModalities_FullDataFrameAllCondsAllSubsGAMotifs.csv")
 for modality in modalities:
     allMotifsFile = f"RestingStateMotifs{modality}_NoThreshold_EyesOpenAndClosed"
     with open(figfolder + 'GA_motifs' + allMotifsFile+ '.pickle','rb') as handle:        
@@ -558,55 +561,57 @@ for modality in modalities:
         filtered_df['MotifInd'] = pd.Categorical(filtered_df['MotifInd'], categories=motif_order, ordered=True)
         filtered_df = filtered_df.sort_values('MotifInd')
 
-        # Calculate proportions for bar plot
-        nSubjects = 19
+        # Calculate proportions per subject for error bars
         nTrials = 60
         nTimepoints = nTimepoints
-        total_timepoints = nSubjects * nTrials * nTimepoints
+        total_timepoints = nTrials * nTimepoints
 
-        motif_counts_df = (
-            filtered_df.groupby(['Condition', 'MotifInd'])
+        # Group by subject, condition, motif
+        subj_prop = (
+            filtered_df.groupby(['Subject', 'Condition', 'MotifInd'])
             .size()
             .reset_index(name='Count')
         )
-        motif_counts_df['Proportion'] = motif_counts_df['Count'] / total_timepoints
+        subj_prop['Proportion'] = subj_prop['Count'] / total_timepoints
+        for _, row in subj_prop.iterrows():
+            subject_level_rows.append({
+                'Modality': modality,
+                'Frequency': freqName,
+                'MotifInd': row['MotifInd'],
+                'Condition': row['Condition'],
+                'Subject': row['Subject'],
+                'Proportion': row['Proportion']
+            })
 
-        # Pivot for plotting, keeping motif order
-        motif_pivot = motif_counts_df.pivot(index='MotifInd', columns='Condition', values='Proportion').reindex(motif_order).fillna(0)
 
-        # Prepare bar colors: for each motif, [EyesOpen, EyesClosed]
-        bar_colors = []
-        for i in range(len(motif_order)):
-            bar_colors.append(motif_colors[i][0])  # EyesOpen (left)
-            bar_colors.append(motif_colors[i][1])  # EyesClosed (right)
+        # Pivot to get mean and sem for each motif/condition
+        means = subj_prop.groupby(['MotifInd', 'Condition'])['Proportion'].mean().unstack()
+        stds = subj_prop.groupby(['MotifInd', 'Condition'])['Proportion'].std().unstack()
 
-        # Create figure with two rows - first row is one wide subplot, second row has multiple
-        fig = plt.figure(figsize=(3 * len(motif_order), 10))
-        gs = fig.add_gridspec(3, len(motif_order), height_ratios=[1,2,2])
-
-        # Create the single bar plot that spans all columns in first row
-        ax_bar = fig.add_subplot(gs[0, :])  # This spans all columns in first row
-
-        # Prepare data for grouped bar plot (EyesOpen left, EyesClosed right for each motif)
-        motif_inds = motif_pivot.index.tolist()
-        eyes_open = motif_pivot['EyesOpen'].values
-        sum_proportions_open = eyes_open.sum()#just a quick check for f ups
-        sum_proportions_open_excl_no_motif = eyes_open[1:].sum()
-        sum_proportions_closed_excl_no_motif = eyes_closed[1:].sum()
-
-        eyes_closed = motif_pivot['EyesClosed'].values
-        sum_proportions_closed = eyes_closed.sum()
-
+        motif_inds = means.index.tolist()
         x = np.arange(len(motif_inds))
         width = 0.35
 
-        bars1 = ax_bar.bar(x - width/2, eyes_open, width, label='EyesOpen', color=[motif_colors[i][0] for i in range(len(motif_order))])
-        bars2 = ax_bar.bar(x + width/2, eyes_closed, width, label='EyesClosed', color=[motif_colors[i][1] for i in range(len(motif_order))])
+        fig = plt.figure(figsize=(3 * len(motif_order), 10))
+        gs = fig.add_gridspec(3, len(motif_order), height_ratios=[1,2,2])
+        ax_bar = fig.add_subplot(gs[0, :])
+
+        # Bar plot with error bars
+        bars1 = ax_bar.bar(
+            x - width/2, means['EyesOpen'], width, 
+            yerr=stds['EyesOpen'], label='EyesOpen', 
+            color=[motif_colors[i][0] for i in range(len(motif_order))],
+            capsize=5
+        )
+        bars2 = ax_bar.bar(
+            x + width/2, means['EyesClosed'], width, 
+            yerr=stds['EyesClosed'], label='EyesClosed', 
+            color=[motif_colors[i][1] for i in range(len(motif_order))],
+            capsize=5
+        )
 
         ax_bar.set_title(
             f'Proportion of Timepoints for Top 6 Motifs ({freqName}, {modality})\n'
-            f'Sum proportions: EyesOpen={sum_proportions_open:.3f}, EyesClosed={sum_proportions_closed:.3f}\n'
-            f'Excl. -1: EyesOpen={sum_proportions_open_excl_no_motif:.3f}, EyesClosed={sum_proportions_closed_excl_no_motif:.3f}'
         )
         ax_bar.set_xlabel('MotifInd')
         ax_bar.set_ylabel('Proportion of Timepoints')
@@ -614,7 +619,6 @@ for modality in modalities:
         ax_bar.set_xticklabels(motif_inds)
         ax_bar.legend(title='Condition')
         ax_bar.set_ylim(0, 1)
-
         # Quiver plots (second row)
         for i, motifInd in enumerate(motif_order):
             ax = fig.add_subplot(gs[1, i])  # Add to second row, appropriate column
@@ -655,108 +659,50 @@ for modality in modalities:
         plt.savefig(output_path, format='svg', dpi=1200)
         plt.show()
 
+subject_level_df = pd.DataFrame(subject_level_rows)
+print(subject_level_df.head())
+subject_level_df.to_csv(f"{figfolder}SubjectLevelProportionsOfTimepointsShowingMotif.csv", index=False)
 
-# # dfTheta.to_csv(f"{figfolder}ThetaMotifCountsFull.csv", index=False)
-# # dfAlpha.to_csv(f"{figfolder}AlphaMotifCountsFull.csv", index=False)
-# # Group by Condition, Timepoint, Frequency, and MotifInd and calculate the average count over subjects
-# GA_sorted = [[],[]]
-# for ind, df in enumerate([dfTheta, dfAlpha]):
-#     motif_count = df.groupby(['Timepoint', 'MotifInd', 'Subject']).size().reset_index(name='Count')
+#Stats
+results = []
+import pandas as pd
+from scipy.stats import ttest_rel, wilcoxon
 
-#     # make all possible combinations
-#     timepoints = df['Timepoint'].unique()
-#     motif_inds = df['MotifInd'].unique()
-#     subjects = df['Subject'].unique()
+for modality in subject_level_df['Modality'].unique():
+    for freq in subject_level_df['Frequency'].unique():
+        df_sub = subject_level_df[(subject_level_df['Modality'] == modality) & (subject_level_df['Frequency'] == freq)]
+        for motif in df_sub['MotifInd'].unique():
+            motif_df = df_sub[df_sub['MotifInd'] == motif]
+            # Pivot to get paired data
+            pivot = motif_df.pivot(index='Subject', columns='Condition', values='Proportion')
+            # Only keep subjects with both conditions
+            pivot = pivot.dropna(subset=['EyesOpen', 'EyesClosed'])
+            if len(pivot) < 2:
+                continue  # Not enough data for stats
+            # Paired t-test
+            t_stat, t_p = ttest_rel(pivot['EyesOpen'], pivot['EyesClosed'])
+            # Wilcoxon signed-rank test
+            try:
+                w_stat, w_p = wilcoxon(pivot['EyesOpen'], pivot['EyesClosed'])
+            except ValueError:
+                w_stat, w_p = (None, None)
+            results.append({
+                'Modality': modality,
+                'Frequency': freq,
+                'MotifInd': motif,
+                'n_subjects': len(pivot),
+                'EyesOpen_mean': pivot['EyesOpen'].mean(),
+                'EyesClosed_mean': pivot['EyesClosed'].mean(),
+                't_stat': t_stat,
+                't_p': t_p,
+                'w_stat': w_stat,
+                'w_p': w_p
+            })
 
-#     complete_index = pd.MultiIndex.from_product([ timepoints, motif_inds, subjects], names=[ 'Timepoint', 'MotifInd', 'Subject'])
-#     # Reindex to include all combinations, fill missing values with 0
-#     motif_count = motif_count.set_index([ 'Timepoint', 'MotifInd','Subject']).reindex(complete_index, fill_value=0).reset_index()
+stats_df = pd.DataFrame(results)
+print(stats_df)
 
-#     average_count = motif_count.groupby(['MotifInd'])['Count'].mean().reset_index()
-#     average_count = average_count.sort_values(by='Count', ascending=False)
-#         # Get the top 6 'MotifInd'
 
-#     amount_of_motifs = 7
-#     top_motif_inds = average_count.head(amount_of_motifs)['MotifInd'].reset_index(drop=True)
-
-#     for motifInd in top_motif_inds[1:]:            
-#         GA_sorted[ind].append(GA_motifs[ind][motifInd])
-
-# #in GA_motifs ignore "subject" field. The correct subject is in the "trial_frames" field
-# with open(folder + 'GA_sorted' + allMotifsFile + '.pickle', 'wb') as handle:
-#     pickle.dump(GA_sorted, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-# max_timepoint = waveData.get_data(dataBucketName).shape[-1]
-
-# #%%___________________ Make cleaned up dataFrames from GA_sorted
-# nSubjects = len(fileList)
-
-# theta_array = np.zeros((nSubjects, nTrials, nTimepoints), dtype=int)-1
-# alpha_array = np.zeros((nSubjects, nTrials, nTimepoints), dtype=int)-1
-# freqs = ['theta', 'alpha']
-# freq_arrays = [theta_array, alpha_array]
-# for freq in range(len(GA_sorted)):
-#     tempGA = GA_sorted[freq]
-#     for sub in range(nSubjects):  
-#         tempList = [[-1 for _ in range(nTimepoints)] for _ in range(nTrials)]
-#         for motifInd, motif in enumerate(tempGA):
-#             trial_frames_list = motif['trial_frames']
-#             for trial_frame in trial_frames_list:
-#                 subject_number, (trial, (start_timepoint, end_timepoint)) = trial_frame
-#                 if subject_number == sub:
-#                     if 0 <= trial < nTrials and 0 <= start_timepoint < nTimepoints and 0 <= end_timepoint <= nTimepoints:
-#                         for timepoint in range(start_timepoint, end_timepoint):
-#                             tempList[trial][timepoint] = motifInd 
-#         # Convert tempList to a NumPy array and store it in the corresponding frequency array
-#         freq_arrays[freq][sub, :nTrials, :] = np.array(tempList)
-
-# time_vector = waveData.get_time()[:-2]
-
-# data = []
-# # Iterate through subjects and trials
-# for sub in range(nSubjects):
-#     for trial in range(nTrials):
-#         for timepoint in range(nTimepoints):
-#             for freqInd, freq_array in enumerate(freq_arrays):
-#                 motifInd = freq_array[sub, trial, timepoint]
-#                 data.append([sub, trial, timepoint, freqInd, motifInd])
-
-# df = pd.DataFrame(data, columns=['Subject', 'Trial', 'Timepoint', 'Frequency', 'MotifInd'])
-# df.to_csv(f"{figfolder}MotifCountsFull.csv", index=False)
-
-# # Group by Condition, Timepoint, Frequency, and MotifInd and calculate the average count over subjects
-# motif_counts = df.groupby([ 'Timepoint', 'Frequency', 'MotifInd', 'Subject']).size().reset_index(name='Count')
-
-# # make all possible combinations
-# timepoints = df['Timepoint'].unique()
-# frequencies = df['Frequency'].unique()
-# motif_inds = df['MotifInd'].unique()
-# subjects = df['Subject'].unique()
-
-# complete_index = pd.MultiIndex.from_product([ timepoints, frequencies, motif_inds, subjects], names=[ 'Timepoint', 'Frequency', 'MotifInd', 'Subject'])
-# # Reindex to include all combinations, fill missing values with 0
-# motif_counts = motif_counts.set_index([ 'Timepoint', 'Frequency', 'MotifInd','Subject']).reindex(complete_index, fill_value=0).reset_index()
-# #%% All subjects, all trials, all times
-# #  Define colormap and normalization
-# cmap = mcolors.ListedColormap(['grey', '#480384', '#f28c00', '#d67258', '#416ae4', '#378b8c', '#7bc35b'])
-# bounds = [-1, 0, 1, 2, 3, 4, 5]
-# norm = mcolors.BoundaryNorm(bounds, cmap.N)
-
-# # Plot
-# for freqInd, freq in enumerate(freqs):
-#     fig, axs = plt.subplots(nrows=nSubjects, figsize=(10, 3 * nSubjects))  # One row per subject
-#     for subInd in range(nSubjects):
-#         ax = axs[subInd] if nSubjects > 1 else axs
-#         data = freq_arrays[freqInd][subInd, :, :]
-#         im = ax.imshow(data, aspect='auto', interpolation='nearest', cmap=cmap, norm=norm, extent=[time_vector[0], time_vector[-1], 0, data.shape[0]])
-#         ax.set_xlabel('Time')
-#         ax.set_ylabel(f'Subject {subInd}')
-#         if subInd == 0:
-#             ax.set_title(f'Frequency: {freq}')
-#         fig.colorbar(im, ax=ax)
-#     plt.tight_layout()
-#     plt.savefig(f"{figfolder}MotifCountsAllSubsAllTrialsAllTimes_{freq}.svg", format='svg', dpi=1200)
-#     plt.show()
 
 
 # %%

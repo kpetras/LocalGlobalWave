@@ -28,6 +28,7 @@ import pandas as pd
    
 #%%
 folder = '/mnt/Data/LoGlo/AVG/'
+figsavefolder = '/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/AVG/' 
 stats_all = []
 p_all = []
 #load random waveData to get info
@@ -294,18 +295,53 @@ all_data = pd.concat([
     combined_below, combined_above, combined_below_ST, combined_above_ST
 ], ignore_index=True)
 
-no_motif_df = all_data[all_data['MotifInd'] == -1].copy()
 import seaborn as sns
 import matplotlib.pyplot as plt
+for freqInd, freq in enumerate(freqnames):
+    no_motif_df = all_data[(all_data['MotifInd'] == -1) & (all_data['Frequency'] == freqInd)].copy()
+    motif_df = all_data[(all_data['MotifInd'] == -1) & (all_data['Frequency'] == freqInd)].copy()
 
-plt.figure(figsize=(10,6))
-sns.barplot(
-    data=no_motif_df,
-    x='Modality', y='Proportion',
-    hue='DataType',
-    ci='sd',
-    col='Period',
-    row='Frequency'
-)
-plt.title('Proportion of No Motif (MotifInd = -1)')
-plt.show()
+    # Calculate "proportion of motif" (1 - proportion of no motif)
+    motif_df['ProportionMotif'] = 1 - no_motif_df['Proportion']
+
+    # Prepare data for plotting
+    # Separate pre and post
+    pre_df = motif_df[motif_df['Period'] == 'Pre']
+    post_df = motif_df[motif_df['Period'] == 'Post']
+
+    fig, axes = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+
+    # Upper: Pre
+    sns.barplot(
+        data=pre_df,
+        x='Modality', y='ProportionMotif',
+        hue='DataType',
+        ci='sd',
+        ax=axes[0],
+        dodge=True
+    )
+    axes[0].set_title('Proportion of Motif (1 - No Motif), Pre-Stimulus')
+    axes[0].set_ylabel('Proportion of Motif')
+    axes[0].set_xlabel('')
+    axes[0].set_ylim(0, 1)  
+    axes[0].legend(title='DataType')
+
+    # Lower: Post
+    sns.barplot(
+        data=post_df,
+        x='Modality', y='ProportionMotif',
+        hue='DataType',
+        ci='sd',
+        ax=axes[1],
+        dodge=True
+    )
+    axes[1].set_title('Proportion of Motif (1 - No Motif), Post-Stimulus')
+    axes[1].set_ylabel('Proportion of Motif')
+    axes[1].set_xlabel('Modality')
+    axes[1].set_ylim(0, 1) 
+    axes[1].legend(title='DataType')
+
+    plt.tight_layout()
+    plt.savefig(f"{figsavefolder}ProportionOfMotif_PrePost_AVGvsST{freq}.svg", format='svg', dpi=1200)
+    plt.savefig(f"{figsavefolder}ProportionOfMotif_PrePost_AVGvsST{freq}.png", format='png', dpi=1200)
+    plt.show()
