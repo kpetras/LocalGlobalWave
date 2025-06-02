@@ -70,7 +70,7 @@ for subname, files in subject_files.items():
                 condition_counts[condition]['Saccade Count'] += saccade_count
                 condition_counts[condition]['Fixation Count'] += fixation_count
 
-    # After processing all files for this subject, append the aggregated results
+    
     for condition, counts in condition_counts.items():
         results.append({
             'Participant': subname,

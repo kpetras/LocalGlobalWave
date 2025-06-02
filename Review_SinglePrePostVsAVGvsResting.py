@@ -18,7 +18,7 @@ import itertools
 #%%________Set files___________________________________________
 folder = '/mnt/Data/LoGlo/'
 avg_folder = '/mnt/Data/LoGlo/AVG/'
-figsavefolder = '/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/AVG/' 
+figsavefolder = '/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN/' 
 
 allMotifsFile = 'AllCondsMotifsEEG_NoThreshold'
 MotifsFromGA_File = 'Motifs_EEG_avg_OpticalFlowAfterFilter_Hilbert'
@@ -28,6 +28,7 @@ fileList = glob.glob(os.path.join(folder, "*",  "EEG_18_OpticalFlowAfterFilter_H
 oscillationThresholdFlag = False 
 waveData = ImportHelpers.load_wavedata_object(avg_folder + 'EEG_Average_18_OpticalFlowAfterFilter_Hilbert_masked')
 modality = 'EEG'
+
 
 
 # allMotifsFile = 'AllCondsMotifsMEG_NoThreshold'
@@ -91,3 +92,34 @@ subjects = ST_original_motif_df['Subject'].unique()
 complete_index = pd.MultiIndex.from_product([conditions, timepoints, frequencies, motif_inds, subjects], names=['Condition', 'Timepoint', 'Frequency', 'MotifInd', 'Subject'])
 # Reindex to include all combinations, fill missing values with 0
 motif_counts_ST_original = motif_counts_ST_original.set_index(['Condition', 'Timepoint', 'Frequency', 'MotifInd','Subject']).reindex(complete_index, fill_value=0).reset_index()
+
+
+#read this
+RestingStateDF = pd.read_csv(f"{figsavefolder}AllModalities_FullDataFrameAllCondsAllSubsGAMotifs.csv")
+
+#%% plot proportion of motif 0 counts for single trial and avg
+#filter motif_counts_ST_original for frequency and MotifInd =0
+import pandas as pd
+single = motif_counts_ST_original.copy()
+resting = RestingStateDF.copy()
+averaged = GA_motif_df.copy()
+
+#split avg in pre and post stim
+time_values = waveData.get_time()[:-1]
+preStim = [-.5, -0.01]
+preStimInds = [hf.find_nearest(time_values, preStim[0])[0], hf.find_nearest(time_values, preStim[1])[0]]
+postStim = [0.5, 1.49]
+postStimInds = [hf.find_nearest(time_values, postStim[0])[0], hf.find_nearest(time_values, postStim[1])[0]]
+
+single['Period'] = single['Timepoint'].apply(
+    lambda x: 'Pre' if (preStimInds[0] <= x <= preStimInds[1])
+    else ('Post' if (postStimInds[0] <= x <= postStimInds[1]) else 'none')
+)
+
+averaged['Period'] = averaged['Timepoint'].apply(
+    lambda x: 'Pre' if (preStimInds[0] <= x <= preStimInds[1])
+    else ('Post' if (postStimInds[0] <= x <= postStimInds[1]) else 'none')
+)
+
+
+
