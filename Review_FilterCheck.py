@@ -23,12 +23,19 @@ from fooof.sim.gen import gen_aperiodic
 from fooof.objs import fit_fooof_3d, combine_fooofs
 from fooof.bands import Bands
 from fooof.analysis import get_band_peak_fm, get_band_peak_fg
-
+import pandas as pd
 #%% helper funs
-def plot_data(subplot, freqs, avg_data, single_chan_data, color, label_prefix, title, chan, show_legend=False):
+def plot_data(subplot, freqs, avg_data=None, single_chan_data=None, color=None, label_prefix=None, title=None, chan=None, 
+              avg_ci=None, single_chan_ci=None, show_legend=False):
     plt.subplot(subplot)
-    plt.plot(freqs, avg_data, color=color, linewidth=2, linestyle='-', label=label_prefix + ' Average')
-    plt.plot(freqs, single_chan_data, color=color, linewidth=2, linestyle='--', label=label_prefix + ' Channel ' + str(chan))
+    if avg_data is not None:
+        plt.plot(freqs, avg_data, color=color, linewidth=2, linestyle='--', label=label_prefix + ' Average')
+    if avg_ci is not None:
+        plt.fill_between(freqs, avg_data - avg_ci, avg_data + avg_ci, color=color, alpha=0.3)
+    if single_chan_data is not None:
+        plt.plot(freqs, single_chan_data, color=color, linewidth=2, linestyle='-.', label=label_prefix + ' Channel ' + str(chan))
+    if single_chan_ci is not None:
+        plt.fill_between(freqs, single_chan_data - single_chan_ci, single_chan_data + single_chan_ci, color=color, alpha=0.1)
     plt.axvline(x=5, color='darkgray', linestyle='--')
     plt.xlabel('Frequency (Hz)')
     plt.title(title)
@@ -38,7 +45,6 @@ def plot_data(subplot, freqs, avg_data, single_chan_data, color, label_prefix, t
     plt.axvline(0, color='black')
     if show_legend:
         plt.legend(frameon=False)
-
 # %%
 folder = "/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/LoGlo"
 savepath  = '/mnt/Data/DuguelabServer2/duguelab_general/DugueLab_Research/Current_Projects/KP_LGr_LoGlo/Data_and_Code/ReviewJoN'
@@ -52,10 +58,15 @@ for modality in ['EEG', 'MEG_Mag_', 'MEG_Grad_']:
     thetaList =[]
     alphaList =[]
     n_chans = 74 if modality == 'EEG' else 102 if modality == 'MEG_Mag_' else 204
-    induced_pre = np.zeros((len(fileList), n_chans, 40))
-    induced_post = np.zeros((len(fileList), n_chans, 40))
-    evoked_pre = np.zeros((len(fileList), n_chans, 40))
-    evoked_post = np.zeros((len(fileList), n_chans, 40))
+    if modality == 'MEG_Mag_':
+        modality = 'Mag'
+    if modality == 'MEG_Grad_':
+        modality = 'Grad'
+    unique_conditions = ['full trav in', 'full trav out','full stand']
+    induced_pre = np.zeros((len(fileList), 3, n_chans, 40))
+    induced_post = np.zeros((len(fileList), 3, n_chans, 40))
+    evoked_pre = np.zeros((len(fileList), 3, n_chans, 40))
+    evoked_post = np.zeros((len(fileList), 3, n_chans, 40))
     for sub,filePath in enumerate(fileList):
         subname = os.path.basename(os.path.dirname(filePath))    
         savefolder = os.path.join(savepath, subname)
@@ -67,60 +78,63 @@ for modality in ['EEG', 'MEG_Mag_', 'MEG_Grad_']:
         trialInfo = waveData.get_trialInfo()
         fovInds = [i for i, trial in enumerate(trialInfo) if 'fov' in trial]
         waveData.prune_trials(fovInds)
+        trialInfo = waveData.get_trialInfo()
         #%_______remove! Just for debug________________
         #waveData.DataBuckets['EEG'].set_data(waveData.DataBuckets['EEG'].get_data()[5:50,:,:],'trl_chan_time')
         
+        if sub == 0:
+            #set up a bunch of stuff in the first iteration
+            time_vect = waveData.get_time()
+            windowLength = 1 #seconds
+            windowsize = int(np.floor((windowLength*waveData.get_sample_rate()))) #in samples
+            fftfreqs = np.fft.fftfreq(windowsize, d=time_vect[1]-time_vect[0])#we use 1 second segments 
+            fft_freqEdges = hf.bin_edges_from_centers(fftfreqs)
+            #we want the first bin to be centered on 1 and the last on 40 Hz
+            freqMin = 1 - ((fftfreqs[1]-fftfreqs[0])/2)
+            freqMax = 40 + ((fftfreqs[1]-fftfreqs[0])/2)
+            nbins = hf.find_nearest(fft_freqEdges, freqMax)[0] - hf.find_nearest(fft_freqEdges, freqMin)[0]
+            nChans = waveData.get_data(modality).shape[1]   
         
-        #set up a bunch of stuff in the first iteration
-        time_vect = waveData.get_time()
-        windowLength = 1 #seconds
-        windowsize = int(np.floor((windowLength*waveData.get_sample_rate()))) #in samples
-        fftfreqs = np.fft.fftfreq(windowsize, d=time_vect[1]-time_vect[0])#we use 1 second segments 
-        fft_freqEdges = hf.bin_edges_from_centers(fftfreqs)
-        #we want the first bin to be centered on 1 and the last on 40 Hz
-        freqMin = 1 - ((fftfreqs[1]-fftfreqs[0])/2)
-        freqMax = 40 + ((fftfreqs[1]-fftfreqs[0])/2)
-        nbins = hf.find_nearest(fft_freqEdges, freqMax)[0] - hf.find_nearest(fft_freqEdges, freqMin)[0]
-        nChans = waveData.get_data(modality).shape[1]    
+        trialInfo = np.array([str(t).strip() for t in waveData.get_trialInfo()])
+        for cond_idx, cond in enumerate(unique_conditions):
+            cond_mask = (trialInfo == cond)
+            if not np.any(cond_mask):
+                continue
+            else: 
+                print(f"Processing condition: {cond} for subject {subname}")
 
-        #%FFT spectrum (induced)
-        chan= 94
-        chan = 66
-        fft_pre= np.zeros((nChans,windowsize),dtype=complex)
-        x = waveData.get_data(modality)[:, :, 0:250]
-        fft_pre[:,:] = np.mean(np.abs(np.fft.fft(x)/x.shape[-1]) ,0)
-        fft_pre_chan_AVG = np.mean(fft_pre, axis=0)
-        fft_pre_singleChan = fft_pre[chan,:]
-        
-        fft_post= np.zeros((nChans,windowsize),dtype=complex)
-        x = waveData.get_data(modality)[:, :, 500:750]#last second of stimulus
-        fft_post[:,:] = np.mean(np.abs(np.fft.fft(x)/x.shape[-1]) ,0)
-        fft_post_chan_AVG = np.mean(fft_post, axis=0)
-        fft_post_singleChan = fft_post[chan,:]    
-        #% Plot  pre- and post-stim psd
-        fig = plt.figure(figsize=(6, 6))
-        plot_data(221, fftfreqs[1:40], fft_pre_chan_AVG[1:40], fft_pre_singleChan[1:40], 'darkblue', '', ' Pre-Stimulus induced',chan = chan, show_legend = False)
-        plot_data(222, fftfreqs[1:40], fft_post_chan_AVG[1:40], fft_post_singleChan[1:40],'darkblue', '', ' Post-Stimulus induced',chan = chan, show_legend = True)
-        plt.tight_layout()
-        plt.show()  
-        induced_pre[sub, :, :]  = fft_pre[:, 1:41]
-        induced_post[sub, :, :] = fft_post[:, 1:41]
+            # Induced: FFT per trial, then average over trials for this condition
+            x_pre = waveData.get_data(modality)[cond_mask, :, 0:250]  # (nTrials_cond, nChans, time)
+            x_post = waveData.get_data(modality)[cond_mask, :, 500:750]
+            # FFT: mean over trials, then abs, then mean over channels
+            fft_pre = np.mean(np.abs(np.fft.fft(x_pre, axis=2) / x_pre.shape[2]), axis=0)  # (nChans, freq)
+            fft_post = np.mean(np.abs(np.fft.fft(x_post, axis=2) / x_post.shape[2]), axis=0)
+            induced_pre[sub, cond_idx, :, :] = fft_pre[:, 1:41]
+            induced_post[sub, cond_idx, :, :] = fft_post[:, 1:41]
 
-        evoked_data_pre = np.mean(waveData.get_data(modality)[:, :, 0:250], axis=0)  # shape: (nChans, time)
-        evoked_data_post = np.mean(waveData.get_data(modality)[:, :, 500:750], axis=0)
-        # FFT of the evoked signal
-        evoked_fft_pre = np.abs(np.fft.fft(evoked_data_pre, axis=1) / evoked_data_pre.shape[1])
-        evoked_fft_post = np.abs(np.fft.fft(evoked_data_post, axis=1) / evoked_data_post.shape[1])
-        evoked_fft_pre_chan_AVG = np.mean(evoked_fft_pre, axis=0)
-        evoked_fft_post_chan_AVG = np.mean(evoked_fft_post, axis=0)
-        evoked_pre[sub,:,:] = evoked_fft_pre[:, 1:41]
-        evoked_post[sub,:,:] = evoked_fft_post[:, 1:41]
+            # Plot induced for this condition
+            # fig = plt.figure(figsize=(6, 6))
+            # fig.suptitle(f'Subject {subname} - Condition: {cond}')
+            # plot_data(221, fftfreqs[1:40], np.mean(fft_pre, axis=0)[1:40], fft_pre[chan, 1:40], 'darkblue', '', 'Pre-Stimulus induced', chan=chan, show_legend=False)
+            # plot_data(222, fftfreqs[1:40], np.mean(fft_post, axis=0)[1:40], fft_post[chan, 1:40], 'darkblue', '', 'Post-Stimulus induced', chan=chan, show_legend=True)
+            # plt.tight_layout()
+            # plt.show()
 
-        fig = plt.figure(figsize=(6, 6))
-        plot_data(221, fftfreqs[1:40], evoked_fft_pre_chan_AVG[1:40], evoked_fft_pre[chan, 1:40], 'darkblue', '', ' Pre-Stimulus evoked', chan=chan, show_legend=False)
-        plot_data(222, fftfreqs[1:40], evoked_fft_post_chan_AVG[1:40], evoked_fft_post[chan, 1:40], 'darkblue', '', ' Post-Stimulus evoked', chan=chan, show_legend=True)
-        plt.tight_layout()
-        plt.show()
+            # Evoked: average over trials, then FFT
+            evoked_data_pre = np.mean(waveData.get_data(modality)[cond_mask, :, 0:250], axis=0)  # (nChans, time)
+            evoked_data_post = np.mean(waveData.get_data(modality)[cond_mask, :, 500:750], axis=0)
+            evoked_fft_pre = np.abs(np.fft.fft(evoked_data_pre, axis=1) / evoked_data_pre.shape[1])  # (nChans, freq)
+            evoked_fft_post = np.abs(np.fft.fft(evoked_data_post, axis=1) / evoked_data_post.shape[1])
+            evoked_pre[sub, cond_idx, :, :] = evoked_fft_pre[:, 1:41]
+            evoked_post[sub, cond_idx, :, :] = evoked_fft_post[:, 1:41]
+
+            # Plot evoked for this condition
+            # fig = plt.figure(figsize=(6, 6))
+            # fig.suptitle(f'Subject {subname} - Condition: {cond}')
+            # plot_data(221, fftfreqs[1:40], np.mean(evoked_fft_pre, axis=0)[1:40], evoked_fft_pre[chan, 1:40], 'darkred', '', 'Pre-Stimulus evoked', chan=chan, show_legend=False)
+            # plot_data(222, fftfreqs[1:40], np.mean(evoked_fft_post, axis=0)[1:40], evoked_fft_post[chan, 1:40], 'darkred', '', 'Post-Stimulus evoked', chan=chan, show_legend=True)
+            # plt.tight_layout()
+            # plt.show()
 
         
         #find individual alpha from the pre-stim peak
@@ -164,8 +178,7 @@ for modality in ['EEG', 'MEG_Mag_', 'MEG_Grad_']:
         bands = Bands({'theta' : [4, 8]})
         # theta peaks 
         theta_peak_post = get_band_peak_fm(fm, bands.theta)
-        print(theta)
-        thetaList.append([theta])
+        thetaList.append([theta_peak_post])
         bands = Bands({'alpha' : [8, 12]})
         alpha_peak_post = get_band_peak_fm(fm, bands.alpha)
 
@@ -184,16 +197,16 @@ for modality in ['EEG', 'MEG_Mag_', 'MEG_Grad_']:
         
         
         if np.any(np.isnan(alpha_peak_pre)):
-            alpha = [10]
+            alpha_peak_pre = [10]
         if np.any(np.isnan(theta_peak_post)):
-            theta = 5
+            theta_peak_post = 5
         #collect 
         alphaList.append([alpha_peak_pre])    
         for freqInd in range(2):
             if freqInd == 0:
                 freq = 5  # theta
                 center_freq = 5
-            else:
+            else:                    
                 freq = alpha_peak_pre[0]
                 center_freq = alpha_peak_pre[0]
             f_low, f_high = freq - 1, freq + 1
@@ -218,46 +231,56 @@ for modality in ['EEG', 'MEG_Mag_', 'MEG_Grad_']:
         
         for freqInd, center_freq in enumerate([5, alphaList[-1][0][0]]):
             f_low, f_high = center_freq - 1, center_freq + 1
-
             analytic_signal = waveData.get_data("AnalyticSignal")[freqInd]
+            time_vect = waveData.get_time()
+            pre_mask = (time_vect >= -0.7) & (time_vect < 0)
+            stim_mask = (time_vect >= .25) & (time_vect <= 1.7)
+
             for trial in range(analytic_signal.shape[0]):
                 for chan in range(nChans):
                     signal = analytic_signal[trial, chan]
-                    envelope = np.abs(signal)
+                    envelope_full = np.abs(signal)
+                    lowpassed_env_full = mne.filter.filter_data(
+                        envelope_full, sfreq=f_sample, l_freq=None,
+                        h_freq=center_freq / 3, verbose=False
+                    )
+                    phase_full = np.angle(signal)
+                    dphase_full = np.diff(np.unwrap(phase_full))
+                    inst_freq_full = dphase_full * f_sample / (2 * np.pi)
+            
+                    # Envelope spectrum 
+                    f_env, Pxx_env = welch(envelope_full, fs=f_sample, nperseg=min(1024, len(envelope_full)))
+                    in_band = (f_env >= f_low) & (f_env <= f_high)
+                    overlap_ratio_full = np.sum(Pxx_env[in_band]) / np.sum(Pxx_env)
+            
+                    # split into preStim and Stim 
+                    for period, mask in zip(['preStim', 'Stim'], [pre_mask, stim_mask]):
 
-                    # Envelope spectrum
-                    f, Pxx = welch(envelope, fs=f_sample, nperseg=min(1024, len(envelope)))
-                    in_band = (f >= f_low) & (f <= f_high)
-                    overlap_ratio = np.sum(Pxx[in_band]) / np.sum(Pxx)
-                    
-                    # Phase correlation
-                    phase = np.angle(signal)
-                    phase_env_corr = np.corrcoef(envelope, np.cos(phase))[1, 0]
-                    dphase = np.diff(np.unwrap(phase))
-                    inst_freq = dphase * f_sample / (2 * np.pi)
-
-                    # Envelope smoothness
-                    lowpassed_env = mne.filter.filter_data(envelope, sfreq=f_sample, l_freq=None,
-                                                h_freq=center_freq / 3, verbose=False)
-                    smoothness = np.sqrt(np.mean((envelope - lowpassed_env) ** 2))
-
-                    discontinuity_index = np.std(np.abs(dphase))
-                    
-                    results.append({
-                        'Subject': subname,
-                        'Frequency': center_freq,
-                        'Channel': chan,
-                        'EnvelopeSpectralOverlap': overlap_ratio,
-                        'EnvelopeSmoothness': smoothness,
-                        'PhaseDiscontinuity': discontinuity_index,
-                        'PhaseEnvCorr': phase_env_corr,
-                        'InstFreqMean': np.mean(inst_freq),
-                        'InstFreqStd': np.std(inst_freq),
-                        'AlphaPeakPre': alpha_peak_pre,
-                        'ThetaPeakPre': theta_peak_pre,
-                        'AlphaPeakPost': alpha_peak_post,
-                        'ThetaPeakPost': theta_peak_post
-                    })
+                        envelope = envelope_full[mask]
+                        phase = phase_full[mask]
+                        dphase = np.diff(np.unwrap(phase))
+                        inst_freq = dphase * f_sample / (2 * np.pi)
+                        lowpassed_env = lowpassed_env_full[mask]
+                        smoothness = np.sqrt(np.mean((envelope - lowpassed_env) ** 2))
+                        phase_env_corr = np.corrcoef(envelope, np.cos(phase))[1, 0]
+                        discontinuity_index = np.std(np.abs(dphase))
+            
+                        results.append({
+                            'Subject': subname,
+                            'Frequency': center_freq,
+                            'Channel': chan,
+                            'Period': period,
+                            'EnvelopeSpectralOverlap': overlap_ratio_full,  # Use full-signal value for both periods
+                            'EnvelopeSmoothness': smoothness,
+                            'PhaseDiscontinuity': discontinuity_index,
+                            'PhaseEnvCorr': phase_env_corr,
+                            'InstFreqMean': np.mean(inst_freq),
+                            'InstFreqStd': np.std(inst_freq),
+                            'AlphaPeakPre': alpha_peak_pre,
+                            'ThetaPeakPre': theta_peak_pre,
+                            'AlphaPeakPost': alpha_peak_post,
+                            'ThetaPeakPost': theta_peak_post
+                        })
 
     # Convert to DataFrame if not already
     df = pd.DataFrame(results)
@@ -269,36 +292,187 @@ for modality in ['EEG', 'MEG_Mag_', 'MEG_Grad_']:
     np.save(os.path.join(savepath, modality + 'EvokedPre.npy'), evoked_pre)
     np.save(os.path.join(savepath, modality + 'EvokedPost.npy'), evoked_post)
 
-    lkfhl
 #%%
-import pandas as pd
-import seaborn as sns
+unique_conditions = ['full trav in', 'full trav out','full stand']
+for modality in ['EEG', 'Mag', 'Grad']:
+    #load the csv and data
+    df = pd.read_csv(os.path.join(savepath, modality +'PhaseEstimateQualityMetrics.csv'))
+    # Add column for freuqband 
+    df['Band'] = df['Frequency'].apply(lambda x: 'Theta (5 Hz)' if np.isclose(x, 5, atol = 1.5) else 'Alpha (~10 Hz)')
+
+    df_subject = (
+        df.groupby(['Subject', 'Band', 'Period'], as_index=False)
+        .mean(numeric_only=True)
+    )
+
+    # thresholds for reliability 
+    thresholds = {
+        'EnvelopeSpectralOverlap': 0.05,
+        'EnvelopeSmoothness': 0.001,
+        'PhaseDiscontinuity': 0.05,
+        'PhaseEnvCorr': 0.005,
+        'InstFreqStd': 1.0  # Example threshold for frequency std
+    }
+
+    metrics = [
+        ('EnvelopeSpectralOverlap', 'Envelope Spectral Overlap'),
+        ('EnvelopeSmoothness', 'Envelope Smoothness (RMS error)'),
+        ('PhaseDiscontinuity', 'Phase Discontinuity'),
+        ('PhaseEnvCorr', 'Phase-Envelope Correlation'),
+        ('InstFreqMean', 'Instantaneous Frequency Mean (Hz)'),
+        ('InstFreqStd', 'Instantaneous Frequency Std (Hz)')
+    ]
+
+    order = ['Theta (5 Hz)', 'Alpha (~10 Hz)']
+
+    for metric, ylabel in metrics:
+        plt.figure(figsize=(7, 5))
+        ax = sns.boxplot(x='Band', y=metric, data=df_subject, palette='Set2', order=order)
+        sns.stripplot(
+            x='Band', y=metric, data=df_subject,
+            hue='Period',  # Color by period
+            dodge=True,    # Separate dots by hue
+            alpha=0.7, jitter=True, size=6, order=order, ax=ax,
+            palette={'preStim': 'b', 'Stim': 'r'}
+        )
+        plt.title(ylabel)
+        plt.xlabel('Frequency Band')
+        plt.ylabel(ylabel)
+        # Remove duplicate legend entries and set title
+        handles, labels = ax.get_legend_handles_labels()
+        # Only keep period handles (first two), drop threshold if present
+        period_labels = ['preStim', 'Stim']
+        period_handles = [h for h, l in zip(handles, labels) if l in period_labels]
+        period_labels = [l for l in labels if l in period_labels]
+        plt.legend(period_handles, period_labels, title='Period', loc='best')
+        plt.tight_layout()
+        plt.savefig(os.path.join(savepath, modality + f'_{metric}_byBand.png'), dpi=300)
+        plt.savefig(os.path.join(savepath, modality + f'_{metric}_byBand.svg'), format='svg')
+        plt.show()
+
+
+    # Alpha peaks
+    def extract_peak_component(cell, idx):
+        """Extract idx-th number from a string/list/array, or return np.nan."""
+        if isinstance(cell, float) or isinstance(cell, int):
+            return cell if idx == 0 else np.nan
+        if cell is None or pd.isna(cell):
+            return np.nan
+        if isinstance(cell, str):
+            # Try to extract numbers from the string
+            arr = np.fromstring(cell.replace('[','').replace(']',''), sep=' ')
+            if arr.size > idx:
+                return arr[idx]
+            else:
+                return np.nan
+        if isinstance(cell, (list, tuple, np.ndarray)):
+            return cell[idx] if len(cell) > idx else np.nan
+        return np.nan
+
+    # Apply to your DataFrame
+    df['AlphaPeakPre_Freq'] = df['AlphaPeakPre'].apply(lambda x: extract_peak_component(x, 0))
+    df['AlphaPeakPre_Power'] = df['AlphaPeakPre'].apply(lambda x: extract_peak_component(x, 1))
+    df['AlphaPeakPre_BW'] = df['AlphaPeakPre'].apply(lambda x: extract_peak_component(x, 2))
+
+    df['AlphaPeakPost_Freq'] = df['AlphaPeakPost'].apply(lambda x: extract_peak_component(x, 0))
+    df['AlphaPeakPost_Power'] = df['AlphaPeakPost'].apply(lambda x: extract_peak_component(x, 1))
+    df['AlphaPeakPost_BW'] = df['AlphaPeakPost'].apply(lambda x: extract_peak_component(x, 2))
+
+
+
+    plt.figure(figsize=(9, 6))
+    plt.errorbar(
+        df['AlphaPeakPre_Freq'],
+        df['AlphaPeakPre_Power'],
+        xerr=df['AlphaPeakPre_BW'] / 2,
+        fmt='o', color='b', ecolor='lightblue', elinewidth=2, capsize=4, label='Pre-stim'
+    )
+    plt.errorbar(
+        df['AlphaPeakPost_Freq'],
+        df['AlphaPeakPost_Power'],
+        xerr=df['AlphaPeakPost_BW'] / 2,
+        fmt='o', color='r', ecolor='salmon', elinewidth=2, capsize=4, label='Post-stim'
+    )
+    plt.xlabel('Alpha Peak Frequency (Hz)')
+    plt.ylabel('Alpha Peak Power (FOOOF amplitude)')
+    plt.title('Alpha Peak Frequency vs Power (Pre/Post-Stim) with Bandwidth')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(savepath, modality + 'Fooof_AlphaPeak_Freq_vs_Power.png'), dpi=300)
+    plt.savefig(os.path.join(savepath, modality + 'Fooof_AlphaPeak_Freq_vs_Power.svg'), format='svg')
+    plt.show()
+
+    #PSD plots
+import numpy as np
+import os
 import matplotlib.pyplot as plt
-for band in ['AlphaPeakPre', 'ThetaPeakPre', 'AlphaPeakPost', 'ThetaPeakPost']:
-    df[[f'{band}_Freq', f'{band}_Power', f'{band}_BW']] = pd.DataFrame(df[band].tolist(), index=df.index)
-# Metrics and thresholds
-metrics_info = {
-    'EnvelopeSpectralOverlap': {'threshold': 0.1, 'color': 'red', 'label': 'Max recommended overlap'},
-    'EnvelopeSmoothness': {'threshold': 0.01, 'color': 'green', 'label': 'Smoothness ceiling'},
-    'PhaseDiscontinuity': {'threshold': 0.1, 'color': 'purple', 'label': 'Discontinuity tolerance'},
-    'PhaseEnvCorr': {'threshold': 0.1, 'color': 'gray', 'label': 'Corr should be ≈ 0'},
-    'InstFreqStd': {'threshold': 1.0, 'color': 'orange', 'label': 'Excess jitter warning'},
-    'AlphaPeakPost_Power': {'threshold': 0.5, 'color': 'brown', 'label': 'Min power'},
-    'AlphaPeakPost_BW': {'threshold': 4.0, 'color': 'blue', 'label': 'Max bandwidth'}
-}
+from scipy.stats import friedmanchisquare
+from statsmodels.stats.multitest import fdrcorrection
 
+# Load the data
+induced_pre = np.load(os.path.join(savepath, modality + 'InducedPre.npy'))
+induced_post = np.load(os.path.join(savepath, modality + 'InducedPost.npy'))
+evoked_pre = np.load(os.path.join(savepath, modality + 'EvokedPre.npy'))
+evoked_post = np.load(os.path.join(savepath, modality + 'EvokedPost.npy'))
 
-# Plotting
-plt.figure(figsize=(4 * len(metrics_info), 6))  # Wider figure to fit all
+chan = 66
+colors = ['#0d586b', '#9c1f27', '#ba7b02']
+freqs = np.arange(1, 41)  # 1 to 40 Hz
+theta_mask = (freqs >= 3) & (freqs <= 7)
+alpha_mask = (freqs >= 8) & (freqs <= 12)
+band_mask = theta_mask | alpha_mask
+band_freqs = freqs[band_mask]
 
-for i, (metric, info) in enumerate(metrics_info.items()):
-    plt.subplot(1, len(metrics_info), i + 1)
-    sns.boxplot(data=df, x='Frequency', y=metric, hue='Modality', showfliers=False)
-    plt.title(metric)
-    plt.xticks(rotation=45)
-    plt.axhline(info['threshold'], color=info['color'], linestyle='--', linewidth=1, label=info['label'])
-    plt.legend(fontsize='small')
+# Titles and data pairs
+data_sets = [
+    ('Pre-Stimulus Induced', induced_pre),
+    ('Post-Stimulus Induced', induced_post),
+    ('Pre-Stimulus Evoked', evoked_pre),
+    ('Post-Stimulus Evoked', evoked_post)
+]
 
-plt.suptitle("Phase & Spectral Quality Metrics", fontsize=16)
-plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+fig = plt.figure(figsize=(12, 10))
+
+for i, (title, data) in enumerate(data_sets):
+    subplot = 221 + i
+    ax = plt.subplot(subplot)
+
+    # Friedman test 
+    data_band = data[:, :, :, :][:, :, :, band_mask]  
+    data_avg = np.mean(data_band, axis=2)  
+    p_vals = []
+    for f in range(data_avg.shape[2]):
+        freq_data = [data_avg[:, cond_idx, f] for cond_idx in range(data_avg.shape[1])]
+        stat, p = friedmanchisquare(*freq_data)
+        p_vals.append(p)
+
+    # Multiple comparisons 
+    rej, pvals_corrected = fdrcorrection(p_vals, alpha=0.05)
+    significant_freqs = band_freqs[rej]
+
+    # Plot 
+    for cond_idx, (cond_label, color) in enumerate(zip(unique_conditions, colors)):
+        subj_avg = np.mean(data[:, cond_idx, :, :], axis=1)  
+        avg_data = np.mean(subj_avg, axis=0)               
+        avg_ci = np.std(subj_avg, axis=0, ddof=1) / np.sqrt(subj_avg.shape[0])
+        freqs_plot = freqs[1:41]
+        ax.plot(freqs_plot, avg_data[1:41], color=color, label=cond_label)
+        ax.fill_between(freqs_plot, avg_data[1:41] - avg_ci[1:41], avg_data[1:41] + avg_ci[1:41],
+                        color=color, alpha=0.3)
+
+    for f in significant_freqs:
+        ax.axvline(x=f, color='black', linestyle='--', alpha=0.4, zorder=0)
+
+    ax.set_title(title)
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylabel('Power')
+    ax.legend()
+    ax.grid(True)
+
+plt.tight_layout()
+plt.savefig(os.path.join(savepath, modality + '_PSD_Comparison_avgOverSubs_perCondition_wStats.png'), dpi=300)
+plt.savefig(os.path.join(savepath, modality + '_PSD_Comparison_avgOverSubs_perCondition_wStats.svg'), format='svg')
 plt.show()
+
+
