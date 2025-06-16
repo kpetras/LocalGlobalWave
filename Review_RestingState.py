@@ -513,13 +513,13 @@ for modality in modalities:
     #Make dataframe with all modalities and conditions    
     for df, freqName in zip([dfTheta, dfAlpha], ['Theta', 'Alpha']):
         df['Modality'] = modality
-        df['Condition'] = df['Trial'].apply(lambda x: "EyesOpen" if x < 60 else "EyesClosed")
+        df['Condition'] = df['Trial'].apply(lambda x: "EyesOpen" if (x % 120) < 60 else "EyesClosed")
         df['Frequency'] = freqName
         all_data.append(df)
         print(df.shape[0])
     all_df = pd.concat(all_data, ignore_index=True)
 #save
-all_df.to_csv(f"{figfolder}AllModalities_FullDataFrameAllCondsAllSubsGAMotifs.csv", index=False)
+all_df.to_csv(f"{figfolder}AllModalities_FullDataFrameAllCondsAllSubsGAMotifs_Resting.csv", index=False)
 
 
 #%%Plot
@@ -538,7 +538,7 @@ motif_colors = [
 #load all_df
 subject_level_rows = []
 
-all_df = pd.read_csv(f"{figfolder}AllModalities_FullDataFrameAllCondsAllSubsGAMotifs.csv")
+all_df = pd.read_csv(f"{figfolder}AllModalities_FullDataFrameAllCondsAllSubsGAMotifs_Resting.csv")
 for modality in modalities:
     allMotifsFile = f"RestingStateMotifs{modality}_NoThreshold_EyesOpenAndClosed"
     with open(figfolder + 'GA_motifs' + allMotifsFile+ '.pickle','rb') as handle:        
@@ -596,7 +596,7 @@ for modality in modalities:
         gs = fig.add_gridspec(3, len(motif_order), height_ratios=[1,2,2])
         ax_bar = fig.add_subplot(gs[0, :])
 
-        # Bar plot with error bars
+        # plot
         bars1 = ax_bar.bar(
             x - width/2, means['EyesOpen'], width, 
             yerr=stds['EyesOpen'], label='EyesOpen', 
@@ -661,7 +661,7 @@ for modality in modalities:
 
 subject_level_df = pd.DataFrame(subject_level_rows)
 print(subject_level_df.head())
-subject_level_df.to_csv(f"{figfolder}SubjectLevelProportionsOfTimepointsShowingMotif.csv", index=False)
+subject_level_df.to_csv(f"{figfolder}SubjectLevelProportionsOfTimepointsShowingMotif_Resting.csv", index=False)
 
 #Stats
 results = []
@@ -673,12 +673,8 @@ for modality in subject_level_df['Modality'].unique():
         df_sub = subject_level_df[(subject_level_df['Modality'] == modality) & (subject_level_df['Frequency'] == freq)]
         for motif in df_sub['MotifInd'].unique():
             motif_df = df_sub[df_sub['MotifInd'] == motif]
-            # Pivot to get paired data
+            # get paired data
             pivot = motif_df.pivot(index='Subject', columns='Condition', values='Proportion')
-            # Only keep subjects with both conditions
-            pivot = pivot.dropna(subset=['EyesOpen', 'EyesClosed'])
-            if len(pivot) < 2:
-                continue  # Not enough data for stats
             # Paired t-test
             t_stat, t_p = ttest_rel(pivot['EyesOpen'], pivot['EyesClosed'])
             # Wilcoxon signed-rank test

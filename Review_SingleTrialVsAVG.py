@@ -46,7 +46,7 @@ modality = 'EEG'
 # avg_figfolder = '/home/kirsten/Dropbox/Projects/LoGlo/loglofigures_GA/Grad/' 
 # fileList = glob.glob(os.path.join(folder, "*",  "Grad_18_OpticalFlowAfterFilter_Hilbert_masked"), recursive=True)
 # oscillationThresholdFlag = False 
-# waveData = ImportHelpers.load_wavedata_object(avg_folder + 'Grad_Average_18_OpticalFlowAfterFilter_Hilbert_masked')
+# waveData = ImportHelpers.load_wavedata_object(avg_folder + 'GradAverage_18_OpticalFlowAfterFilter_Hilbert_masked')
 # modality = 'Grad'
 
 
@@ -363,7 +363,75 @@ for freqInd, freq in enumerate(freqs):
         ax.set_title(f'Proportions by Period, Freq {freq} Hz, Condition: {cond}')
         ax.set_ylim(0, 1)
         plt.tight_layout()
-        #plt.savefig(figsavefolder + f"{modality}_BarTriplets_Proportions_Freq_{freq}_Cond_{cond}.svg", format='svg')
-        #plt.savefig(figsavefolder + f"{modality}_BarTriplets_Proportions_Freq_{freq}_Cond_{cond}.jpg", format='jpg')
+        plt.savefig(figsavefolder + f"{modality}_BarTriplets_Proportions_Freq_{freq}_Cond_{cond}.svg", format='svg')
+        plt.savefig(figsavefolder + f"{modality}_BarTriplets_Proportions_Freq_{freq}_Cond_{cond}.jpg", format='jpg')
         plt.show()
-# %%
+# %% averages over codns
+import matplotlib.pyplot as plt
+import numpy as np
+
+for freqInd, freq in enumerate(freqs):
+    nTimepoints = nTimepoints_per_freq[freqInd]
+    timepoints = waveData.get_time()[int(2 * (waveData.get_sample_rate() / freqs[freqInd])):-(int(2 * (waveData.get_sample_rate() / freqs[freqInd]))+1)]
+    nTrialsperCond = 160
+
+    # Stack arrays across conditions: shape (nConds, nSubs, nTimepoints)
+    match_counts = match_counts_arr[freqInd]  # shape: (nConds, nSubs, nTimepoints)
+    non_matching_counts = no_temporalMatch_arr[freqInd]
+    mins1_original = no_singleTrialMotif[freqInd]
+
+    # Proportions (nConds, nSubs, nTimepoints)
+    match_prop = match_counts / nTrialsperCond
+    nonmatch_prop = non_matching_counts / nTrialsperCond
+    minus1_prop = mins1_original / nTrialsperCond
+
+    # Average over conditions (axis=0)
+    match_prop_avg = np.nanmean(match_prop, axis=0)      # shape: (nSubs, nTimepoints)
+    nonmatch_prop_avg = np.nanmean(nonmatch_prop, axis=0)
+    minus1_prop_avg = np.nanmean(minus1_prop, axis=0)
+
+    # Split indices for pre and post stim
+    pre_mask = timepoints < 0
+    post_mask = timepoints >= 0
+
+    # Mean and SEM across time and subjects for each period
+    def mean_sem(arr, mask):
+        vals = np.nanmean(arr[:, mask], axis=1)  # mean over time, for each subject
+        return np.nanmean(vals), np.nanstd(vals, ddof=1) / np.sqrt(np.sum(~np.isnan(vals)))
+
+    # Pre-stim
+    pre_match, pre_match_sem = mean_sem(match_prop_avg, pre_mask)
+    pre_nonmatch, pre_nonmatch_sem = mean_sem(nonmatch_prop_avg, pre_mask)
+    pre_minus1, pre_minus1_sem = mean_sem(minus1_prop_avg, pre_mask)
+    # Post-stim
+    post_match, post_match_sem = mean_sem(match_prop_avg, post_mask)
+    post_nonmatch, post_nonmatch_sem = mean_sem(nonmatch_prop_avg, post_mask)
+    post_minus1, post_minus1_sem = mean_sem(minus1_prop_avg, post_mask)
+
+    # Combine for plotting: [pre_match, pre_nonmatch, pre_minus1, post_match, post_nonmatch, post_minus1]
+    means = [pre_match, pre_nonmatch, pre_minus1, post_match, post_nonmatch, post_minus1]
+    sems = [pre_match_sem, pre_nonmatch_sem, pre_minus1_sem, post_match_sem, post_nonmatch_sem, post_minus1_sem]
+
+    # X locations: 0,1,2 for pre, 4,5,6 for post (leave a gap)
+    x = np.array([0, 1, 2, 4, 5, 6])
+    bar_labels = ['Match', 'Non-match', 'No motif', 'Match', 'Non-match', 'No motif']
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars = ax.bar(x, means, yerr=sems, capsize=5, color=['#4C72B0']*3 + ['#DD8452']*3)
+
+    # Set x-ticks in the center of each group
+    ax.set_xticks([1, 5])
+    ax.set_xticklabels(['Pre-stim', 'Post-stim'])
+    # Add minor ticks for each bar
+    for i, label in enumerate(bar_labels):
+        ax.text(x[i], -0.04, label, ha='center', va='top', fontsize=10, rotation=45, color='k', transform=ax.get_xaxis_transform())
+
+    ax.set_ylabel('Mean Proportion (Averaged over Conditions)')
+    ax.set_title(f'Proportions by Period (Averaged), Freq {freq} Hz')
+    ax.set_ylim(0, 1)
+    plt.tight_layout()
+    plt.savefig(figsavefolder + f"{modality}_BarTriplets_Proportions_Freq_{freq}_Cond_Averaged.svg", format='svg')
+    plt.savefig(figsavefolder + f"{modality}_BarTriplets_Proportions_Freq_{freq}_Cond_Averaged.jpg", format='jpg')
+    plt.show()
+
+

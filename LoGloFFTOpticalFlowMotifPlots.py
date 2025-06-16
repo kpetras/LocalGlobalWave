@@ -44,13 +44,8 @@ folder = "<folder_path>"
 
 # allMotifsFile = 'AllCondsMotifsGrad_NoThreshold'
 # figfolder = '<figfolder_path>' 
-# fileList = glob.glob(os.path.join(folder, "*", "**", "Grad_18_OpticalFlowAfterFilter_Hilbert_masked"), recursive=True)
-# oscillationThresholdFlag = False 
-
-allMotifsFile = 'AllCondsMotifsSimulations_NoThreshold'
-figfolder = '<figfolder_path>' 
-fileList = glob.glob(os.path.join(folder, 'Simulations', 'sub*_Filter_Hilbert_OpticalFlow'))
-oscillationThresholdFlag = False
+# fileList = glob.glob(os.path.join(folder, 'Simulations', 'sub*_Filter_Hilbert_OpticalFlow'))
+# oscillationThresholdFlag = False
 
 GA_motif_counts = []
 allmotifs = []
@@ -313,7 +308,9 @@ for sub in range(nSubjects):
 
 df = pd.DataFrame(data, columns=['Subject', 'Trial', 'Condition', 'Timepoint', 'Frequency', 'MotifInd'])
 df.to_csv(f"{figfolder}MotifCountsFull.csv", index=False)
-
+##%
+df = pd.read_csv(f"{figfolder}MotifCountsFull.csv")
+GA_sorted = pickle.load(open(folder + 'GA_sorted' + allMotifsFile + '.pickle', 'rb'))
 # Group by Condition, Timepoint, Frequency, and MotifInd and calculate the average count over subjects
 motif_counts = df.groupby(['Condition', 'Timepoint', 'Frequency', 'MotifInd', 'Subject']).size().reset_index(name='Count')
 
@@ -451,6 +448,13 @@ for freq, _ in enumerate(freqs):
 
             # Calculate the difference between pre-stim and post-stim
             differences = [post - pre for pre, post in zip(preStim_averages, postStim_averages)]
+            t_stat, p_value = stats.ttest_rel(postStim_averages, preStim_averages)
+            print(f"T-test for {cond} (Motif {motifInd}, Frequency {freq}): t={t_stat:.2f}, p={p_value:.3f}")
+            # Wilcoxon signed-rank test
+            w_stat, w_p_value = stats.wilcoxon(postStim_averages, preStim_averages)
+            wilcoxon_text = f"W={w_stat:.2f}, p={w_p_value:.3f}"
+            print(f"Wilcoxon test for {cond} (Motif {motifInd}, Frequency {freq}): W={w_stat:.2f}, p={w_p_value:.3f}")
+
             all_differences.append(differences)
 
             ax2.boxplot(differences, positions=[index[i] * spacing], widths=0.4, patch_artist=True,
@@ -471,10 +475,10 @@ for freq, _ in enumerate(freqs):
 
         plt.tight_layout()
         ax1.set_ylim([0, np.max(maxY)+10])
-        plt.savefig(f"{figfolder}MotifCounts_{freq}_{motifInd}Threshold.svg", format='svg', dpi=1200)
+        #plt.savefig(f"{figfolder}MotifCounts_{freq}_{motifInd}Threshold.svg", format='svg', dpi=1200)
         plt.show()
 
-#%%
+#%% Old
 from scipy import stats
 fullTimeRange = waveData.get_time()
 
@@ -519,8 +523,8 @@ for motifInd in range(len(GA_sorted[freq])):
             overall_preStim_avg = np.mean(preStim_averages)
             overall_postStim_avg = np.mean(postStim_averages)
             
-            ax.bar(index[0], overall_preStim_avg, bar_width, color=secondaryColors[cond_index],  label=f'{condition} Pre-Stim' if freq == frequencies[0] else "")
-            ax.bar(index[1], overall_postStim_avg, bar_width, color=colors[cond_index], label=f'{condition} Post-Stim' if freq == frequencies[0] else "")
+            ax.bar(index[0], overall_preStim_avg, bar_width, color=secondaryColors[cond_index],  label=f'{cond} Pre-Stim' if freq == frequencies[0] else "")
+            ax.bar(index[1], overall_postStim_avg, bar_width, color=colors[cond_index], label=f'{cond} Post-Stim' if freq == frequencies[0] else "")
             
             for subj_index, (preStimSingle, postStimSingle) in enumerate(zip(preStim_averages, postStim_averages)):
                 ax.scatter(index[0], preStimSingle, color='black')
@@ -533,7 +537,7 @@ for motifInd in range(len(GA_sorted[freq])):
         ax.set_xticklabels(conditions)
         ax.set_facecolor('white')
         ax.tick_params(axis='y', colors='black', grid_color = 'black', grid_alpha = 0.3)
-        plt.savefig(f"{figfolder}BarGraphMotifCounts_{motifInd}_{freq}.svg", format='svg', dpi=1200)
+        #plt.savefig(f"{figfolder}BarGraphMotifCounts_{motifInd}_{freq}.svg", format='svg', dpi=1200)
         plt.show()
 
 

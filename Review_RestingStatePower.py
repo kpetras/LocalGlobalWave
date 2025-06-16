@@ -111,12 +111,13 @@ for modality in modalities:
             for trial in range(nTrials_cond):
                 trial_psds = []
                 for chan in range(nChans):
-                    freqs, Pxx = welch(x[trial, chan, :], fs=f_sample)
+                    freqs, Pxx = welch(x[trial, chan, :], fs=f_sample)                                         
                     trial_psds.append(Pxx)
                 psds.append(trial_psds)
             psds = np.array(psds) 
             mean_psd = np.mean(psds, axis=0)  
             induced[sub, cond_idx, :, :] = mean_psd[:, 1:41]
+            induced_freqs = freqs[1:41]  
         #find individual alpha 
         time_vect = waveData.get_time()
         windowLength = 1 #seconds
@@ -159,34 +160,35 @@ for modality in modalities:
 
 # %%
 modalities = ["EEG", "Mag", "Grad"]
-conditions = ["Eyes Open", "Eyes Closed"]
 colors = ['#1f77b4', '#ff7f0e']
 
+# Use the same order as in the data processing!
+# order of unique_conditions used above is obviously alphabetical: ['eyes closed', 'eyes open'], so I messed up and named files wrong. 
+# Should be Resting_state_power_induced_CLOSED_OPEN 
+# Correct order is closed, then open!!!
+plot_labels = ['Eyes Closed', 'Eyes Open']
+
+
 for modality in modalities:
-    # Load saved data
     induced = np.load(os.path.join(folder, f"{modality}_Resting_state_power_induced_open_closed.npy"))
     alphaList = np.load(os.path.join(folder, f"{modality}_Resting_state_power_alpha.npy"), allow_pickle=True)
     thetaList = np.load(os.path.join(folder, f"{modality}_Resting_state_power_theta.npy"), allow_pickle=True)
-    # Use the frequency vector from Welch
-    # Assuming you used freqs[1:41] for PSDs
-    f_sample = 500  # or whatever your sample rate is
-    nperseg = 256   # or whatever you used in welch
-    freqs = np.fft.rfftfreq(nperseg, 1/f_sample)[1:41]
-
     fig, ax = plt.subplots(figsize=(8, 5))
-    for cond_idx, cond in enumerate(conditions):
+    ax.grid(False)  # Remove the gray grid
+    ax.axhline(0, color='k', linewidth=1, linestyle='--')  # Add y=0 line
+    for cond_idx, label in enumerate(plot_labels):
         # Average over subjects and channels
         psd_mean = np.mean(induced[:, cond_idx, :, :], axis=(0, 1))
         psd_sem = np.std(induced[:, cond_idx, :, :], axis=(0, 1)) / np.sqrt(induced.shape[0])
-        ax.plot(freqs, psd_mean, label=cond, color=colors[cond_idx])
-        ax.fill_between(freqs, psd_mean - psd_sem, psd_mean + psd_sem, color=colors[cond_idx], alpha=0.2)
+        ax.plot(induced_freqs, psd_mean, label=label, color=colors[cond_idx])
+        ax.fill_between(induced_freqs, psd_mean - psd_sem, psd_mean + psd_sem, color=colors[cond_idx], alpha=0.2)
 
-    # Overlay alpha and theta peaks for each subject
+    # Overlay alpha and theta peaks for each subject (optional)
     for subj, (alpha, theta) in enumerate(zip(alphaList, thetaList)):
-        if not np.isnan(alpha[0]):
-            ax.scatter(alpha[0], 0, marker='^', color='purple', s=60, label='Alpha peak' if subj == 0 else "")
-        if not np.isnan(theta[0]):
-            ax.scatter(theta[0], 0, marker='v', color='green', s=60, label='Theta peak' if subj == 0 else "")
+        if not np.isnan(alpha[0][0]):
+            ax.scatter(alpha[0][0], 0, marker='^', color='purple', s=60, label='Alpha peak' if subj == 0 else "")
+        if not np.isnan(theta[0][0]):
+            ax.scatter(theta[0][0], 0, marker='v', color='green', s=60, label='Theta peak' if subj == 0 else "")
 
     ax.set_xlabel('Frequency (Hz)')
     ax.set_ylabel('PSD (a.u.)')
@@ -195,4 +197,8 @@ for modality in modalities:
     ax.set_xlim([1, 40])
     plt.tight_layout()
     plt.savefig(os.path.join(folder, f"{modality}_Resting_state_power_spectra.png"))
+    plt.savefig(os.path.join(folder, f"{modality}_Resting_state_power_spectra.svg"), format='svg')
     plt.show()
+
+
+# %%
